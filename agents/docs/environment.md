@@ -1,0 +1,69 @@
+# Development environment
+
+deskfleet follows [Heron's development workflow](https://github.com/minori-live/heron/blob/main/AGENTS.md):
+mise owns tool versions and the task graph, APM owns repository-local skills,
+and local validation uses the same tasks as CI.
+
+## Bootstrap
+
+Install [mise](https://mise.jdx.dev/getting-started.html), then run from the
+repository root in a login shell:
+
+```sh
+mise trust
+mise install --locked
+mise run dev
+```
+
+Use PowerShell 7 (`pwsh`) on Windows. `mise exec -- <command>` runs a focused
+command with the project tools even when the shell has not activated mise.
+
+`mise.toml` selects Rust, its components, Node.js, pnpm, APM, and supporting
+development tools. Lockfile mode is enabled and `mise.lock` records the resolved
+versions and available platform metadata. `Cargo.lock` separately owns Rust
+dependencies. Cargo's `rust-version` declares compiler requirements; it does not
+select the installed toolchain.
+
+After changing a tool declaration, run `mise lock` and `mise install --locked`,
+then include the configuration and lockfile changes together.
+
+## Task boundaries
+
+| Command | Purpose |
+| --- | --- |
+| `mise run dev` | Run the Actix Web server |
+| `mise run check` | Run static checks, repository script tests, Rust tests, and a debug workspace build |
+| `mise run check-fast` | Run Rust formatting, dependency usage, Clippy, and tests |
+| `mise run test` | Run repository script tests and Rust tests |
+| `mise run build` | Build the release server and native library |
+| `mise run format` | Apply Rust formatting |
+| `mise run format-check` | Check Rust formatting |
+| `mise run lint` | Check Rust dependency usage and Clippy |
+| `mise run skills:install` | Restore skills from the APM lockfile |
+
+Public tasks compose focused tasks in `mise.toml`. Independent checks can run in
+parallel. Cargo operations sharing `target/` use mise's `wait_for` ordering when
+they appear in the same run, avoiding repeated builds and lock contention.
+
+## Agent skills
+
+APM installs `rust-skills`, `stop-that-shit`, and `stss` from the commit references
+in `apm.yml`. `apm.lock.yaml` records their resolved sources and deployed files.
+Both manifests and the installed `.agents/skills/` tree belong in source control.
+Only the local download cache, `apm_modules/`, is ignored.
+
+A fresh checkout already contains the skills. To restore the exact installation:
+
+```sh
+mise run skills:install
+```
+
+This uses `apm install --frozen`. To update a dependency, edit its
+reference in `apm.yml`, run `mise exec -- apm install`, and review the manifest,
+lockfile, and installed skill diff together. Do not edit the deployed copies by
+hand.
+
+The Rust skill includes an upstream example crate and its own toolchain file.
+Those files are preserved as dependency content. The example crate is excluded
+from the deskfleet Cargo workspace, and the static checks verify that boundary;
+deskfleet builds use the root mise toolchain.

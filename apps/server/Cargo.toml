@@ -1,0 +1,21 @@
+[package]
+name = "deskfleet-server"
+description = "The deskfleet control-plane HTTP server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+actix-web.workspace = true
+deskfleet-protocol.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

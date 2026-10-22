@@ -1,0 +1,16 @@
+[package]
+name = "deskfleet-protocol"
+description = "Versioned wire contracts for deskfleet clients, daemons, and servers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+deskfleet-model.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

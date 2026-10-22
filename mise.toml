@@ -1,0 +1,99 @@
+min_version = "2026.10.2"
+
+[settings]
+lockfile = true
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64", "windows-x64"]
+
+[tools]
+apm = "0.34.0"
+rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustfmt"] }
+node = "24.21.0"
+pnpm = "12.14.0"
+"cargo:cargo-shear" = "1.13.5"
+
+[tasks."skills:install"]
+description = "Restore the pinned, repository-local agent skills"
+run = "apm install --frozen"
+
+[tasks.dev]
+description = "Run the Actix Web backend"
+run = "cargo run -p deskfleet-server --locked"
+
+[tasks.check]
+description = "Run static checks, script and Rust tests, and a debug build"
+depends = ["check:static", "check:scripts", "check:rust-tests", "rust:build"]
+
+[tasks."check-fast"]
+description = "Run the Rust edit-loop checks"
+depends = ["rust:format:check", "rust:shear", "rust:clippy", "rust:test"]
+
+[tasks.format]
+description = "Format the Rust workspace"
+depends = ["rust:format"]
+
+[tasks."format-check"]
+description = "Check Rust formatting"
+depends = ["rust:format:check"]
+
+[tasks.lint]
+description = "Check Rust dependencies and Clippy diagnostics"
+depends = ["rust:shear", "rust:clippy"]
+
+[tasks.test]
+description = "Run script and Rust tests"
+depends = ["check:scripts", "check:rust-tests"]
+
+[tasks.build]
+description = "Build the release server and native addon"
+run = "cargo build --workspace --release --locked"
+
+[tasks."rust:format"]
+hide = true
+run = "cargo fmt --all"
+
+[tasks."rust:format:check"]
+hide = true
+run = "cargo fmt --all -- --check"
+
+[tasks."rust:shear"]
+hide = true
+run = "cargo shear --locked"
+
+[tasks."rust:clippy"]
+hide = true
+run = "cargo clippy --workspace --all-targets --locked -- -D warnings"
+
+[tasks."rust:test"]
+hide = true
+# Serialize Cargo tasks sharing target/ only when both are scheduled.
+wait_for = ["rust:clippy"]
+run = "cargo test --workspace --locked"
+
+[tasks."rust:build"]
+hide = true
+wait_for = ["rust:clippy", "rust:test"]
+run = "cargo build --workspace --locked"
+
+[tasks."check:rust-skills-harness"]
+hide = true
+run = "node scripts/check-rust-skills-harness.ts"
+
+[tasks."check:static"]
+hide = true
+depends = ["check:rust-skills-harness", "rust:format:check", "rust:shear", "rust:clippy"]
+
+[tasks."check:scripts"]
+hide = true
+run = "node --test scripts/*.test.ts"
+
+[tasks."check:rust-tests"]
+hide = true
+depends = ["rust:test"]
+
+[tasks."ci:check:static"]
+hide = true
+depends = ["check:static", "check:scripts"]
+
+[tasks."ci:report:sccache"]
+hide = true
+run = "node scripts/ci-report-sccache.ts"

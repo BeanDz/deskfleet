@@ -1,0 +1,85 @@
+name: Setup deskfleet build
+description: Install locked tools and restore shared Cargo and compiler caches.
+
+inputs:
+  github-token:
+    description: Token for mise tool downloads. Leave empty for pull requests.
+    required: false
+    default: ""
+  cache-rust-build:
+    description: Restore Cargo target artifacts for checks; release builds use compiler caching only.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install locked tools
+      uses: jdx/mise-action@v5.2.2
+      with:
+        version: 2026.10.17
+        install_args: --locked
+        cache: true
+        cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}
+        github_token: ${{ inputs.github-token }}
+
+    - name: Restore Cargo build cache
+      if: inputs.cache-rust-build == 'true'
+      uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    - name: Configure shared compiler cache
+      shell: bash
+      env:
+        CACHE_MODE: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'READ_WRITE' || 'READ_ONLY' }}
+      run: |
+        {
+          echo "SCCACHE_GHA_ENABLED=true"
+          echo "SCCACHE_GHA_RW_MODE=$CACHE_MODE"
+        } >> "$GITHUB_ENV"
+
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.11
+      with:
+        version: v0.18.0
+
+    - name: Enable compiler caching
+      shell: bash
+      run: echo "RUSTC_WRAPPER=${SCCACHE_PATH:-sccache}" >> "$GITHUB_ENV"
+
+    - name: Locate Cargo downloads
+      id: paths
+      if: inputs.cache-rust-build != 'true'
+      shell: bash
+      run: echo "cargo-home=${CARGO_HOME:-$HOME/.cargo}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Cargo downloads
+      id: downloads
+      if: inputs.cache-rust-build != 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ${{ steps.paths.outputs.cargo-home }}/registry/index
+          ${{ steps.paths.outputs.cargo-home }}/registry/cache
+          ${{ steps.paths.outputs.cargo-home }}/git/db
+        key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Fetch locked Rust dependencies
+      if: inputs.cache-rust-build != 'true'
+      shell: bash
+      run: cargo fetch --locked
+
+    - name: Save Cargo downloads
+      if: >-
+        inputs.cache-rust-build != 'true' &&
+        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+        steps.downloads.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          ${{ steps.paths.outputs.cargo-home }}/registry/index
+          ${{ steps.paths.outputs.cargo-home }}/registry/cache
+          ${{ steps.paths.outputs.cargo-home }}/git/db
+        key: ${{ steps.downloads.outputs.cache-primary-key }}

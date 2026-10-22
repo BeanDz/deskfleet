@@ -1,0 +1,12 @@
+[package]
+name = "deskfleet-native"
+description = "Native platform capabilities for the deskfleet daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

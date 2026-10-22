@@ -1,0 +1,12 @@
+/target/
+**/node_modules/
+**/dist/
+*.node
+.DS_Store
+.env
+.env.local
+mise.local.toml
+mise.local.lock
+
+# APM download cache only; deployed .agents/skills/ and apm.lock.yaml are tracked.
+apm_modules/

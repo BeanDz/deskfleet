@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install locked Node toolchain
+        uses: jdx/mise-action@v5.2.2
+        with:
+          version: 2026.10.17
+          install_args: --locked node
+          cache: true
+          cache_save: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+          github_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+
+      - name: Classify documentation changes
+        id: classify
+        shell: bash
+        run: |
+          # Missing output or a failed classifier must run full CI.
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          if ! node scripts/ci-docs-only.ts; then
+            echo "::warning::Change classification failed; running full CI."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Test
+    needs: changes
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/test.yml
+    with:
+      docs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+
+  build:
+    name: Build
+    needs: changes
+    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true') }}
+    uses: ./.github/workflows/build.yml
+    with:
+      pr_smoke_build: ${{ github.event_name == 'pull_request' }}
+
+  gate:
+    name: Gate
+    if: ${{ always() }}
+    needs: [changes, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require successful CI jobs
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          expected_build=success
+          if [[ "$CHANGES_RESULT" == "success" && "$DOCS_ONLY" == "true" ]]; then
+            expected_build=skipped
+          fi
+          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" ]]; then
+            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, Test: $TEST_RESULT, Build: $BUILD_RESULT)."
+            exit 1
+          fi

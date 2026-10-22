@@ -1,0 +1,13 @@
+name: deskfleet
+version: 1.0.0
+description: Agent skill dependencies for deskfleet
+author: Delton Ding
+targets:
+  - agent-skills
+dependencies:
+  apm:
+    - leonardomso/rust-skills#fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9
+    - lennney/stop-that-shit/skills/stop-that-shit#694bbd59e26b522cd63801a01590ccaa77c7fe84
+    - lennney/stop-that-shit/skills/stss#694bbd59e26b522cd63801a01590ccaa77c7fe84
+includes: auto
+scripts: {}
