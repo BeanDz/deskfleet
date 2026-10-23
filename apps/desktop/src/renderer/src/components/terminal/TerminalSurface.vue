@@ -3,11 +3,18 @@ import { FitAddon } from "@xterm/addon-fit"
 import { Terminal, type ITheme } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
 import { useResizeObserver } from "@vueuse/core"
-import { onBeforeUnmount, onMounted, useTemplateRef } from "vue"
+import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue"
 
 const props = defineProps<{
   /** Written once when the terminal opens; `\n` becomes a new line. */
   banner?: string
+  interactive?: boolean
+  scrollback?: number
+}>()
+const emit = defineEmits<{
+  ready: [size: { cols: number; rows: number }]
+  input: [data: string]
+  resize: [size: { cols: number; rows: number }]
 }>()
 
 // Terminals stay dark in both themes; the background matches --ui-color-terminal.
@@ -20,28 +27,40 @@ const theme: ITheme = {
 
 const container = useTemplateRef<HTMLDivElement>("container")
 const fit = new FitAddon()
-// Input stays disabled until a session transport exists to receive it.
 const terminal = new Terminal({
-  cursorBlink: false,
-  disableStdin: true,
+  cursorBlink: props.interactive ?? false,
+  disableStdin: !props.interactive,
   fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
   fontSize: 13,
-  scrollback: 5_000,
+  scrollback: props.scrollback ?? 5_000,
   theme,
 })
 terminal.loadAddon(fit)
+const input = terminal.onData((data) => emit("input", data))
+const resize = terminal.onResize((size) => emit("resize", size))
+watch(() => props.interactive, (interactive) => {
+  terminal.options.disableStdin = !interactive
+  terminal.options.cursorBlink = interactive ?? false
+  if (interactive) terminal.focus()
+})
+watch(() => props.scrollback, (scrollback) => { terminal.options.scrollback = scrollback ?? 5_000 })
 
 onMounted(() => {
   terminal.open(container.value!)
   fit.fit()
-  // Hide the cursor (DECTCEM) while the terminal cannot take input.
-  terminal.write("\x1b[?25l")
+  if (props.banner && !props.interactive) terminal.write("\x1b[?25l")
   if (props.banner) terminal.write(props.banner.replaceAll("\n", "\r\n"))
+  emit("ready", { cols: terminal.cols, rows: terminal.rows })
 })
 useResizeObserver(container, () => fit.fit())
-onBeforeUnmount(() => terminal.dispose())
+onBeforeUnmount(() => { input.dispose(); resize.dispose(); terminal.dispose() })
 
-defineExpose({ terminal })
+defineExpose({
+  terminal,
+  write: (data: Uint8Array, callback?: () => void) => terminal.write(data, callback),
+  reset: () => terminal.reset(),
+  focus: () => terminal.focus(),
+})
 </script>
 
 <template>

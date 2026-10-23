@@ -5,13 +5,13 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./bindings.d.ts",
+      "types": "./index.ts",
       "default": "./index.ts"
     }
   },
   "scripts": {
-    "build": "napi build --release --no-js --dts bindings.d.ts -- --locked",
-    "build:debug": "napi build --no-js --dts bindings.d.ts -- --locked"
+    "build": "napi build --release --no-js --no-const-enum --dts bindings.d.ts -- --locked",
+    "build:debug": "napi build --no-js --no-const-enum --dts bindings.d.ts -- --locked"
   },
   "napi": {
     "binaryName": "deskfleet"

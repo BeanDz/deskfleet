@@ -7,6 +7,7 @@ export function rendererContentSecurityPolicy(production: boolean): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "font-src 'self'",
+    "media-src 'self' blob:",
     // Vite's HMR client is the only development connection.
     production ? "connect-src 'none'" : "connect-src 'self' ws://127.0.0.1:5173",
     "object-src 'none'",

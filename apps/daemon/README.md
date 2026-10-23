@@ -4,6 +4,12 @@
 the desktop app. It reports native platform information, serves a loopback health
 endpoint, and runs Codex CLI sessions over ACP.
 
+Its programmatic `PeerSessions` API owns native WebRTC peers and optional desktop
+streams; daemon shutdown closes these sessions. The CLI exposes authenticated
+local IPC for Electron capability discovery, WebRTC signaling, and capture
+control. Central server signaling is not yet connected. See [native media](../../agents/docs/media.md) for the API,
+platform support, and codec details.
+
 ## Development
 
 From the repository root:
@@ -31,7 +37,21 @@ mise exec -- node apps/daemon/src/main.ts --info
 mise exec -- node apps/daemon/src/main.ts --port 8081
 ```
 
-On Unix, SIGINT and SIGTERM close the listener and exit cleanly.
+The CLI publishes its authenticated Unix socket or Windows named pipe in
+`~/.deskfleet/daemon.json` (private directory and file). Set
+`DESKFLEET_DAEMON_DIRECTORY` to use another directory, with the same value in the
+Electron environment. Only one daemon can publish a live endpoint there. Local
+IPC initializes capture only when the client requests capabilities or a stream.
+Losing a client closes its peers, leaving the daemon, agent work, and terminal
+processes alive. The data-only terminal peer uses the same authenticated signaling
+path. Dial, hangup, catalog and lifecycle events use signaling; terminal bytes
+and resize travel on its WebRTC DataChannel. `TerminalSessions` owns native PTYs
+and their full disk-backed output history. History lives in the daemon directory
+until explicit hangup. Restart preserves history and marks lost processes
+interrupted. See [terminals](../../agents/docs/terminals.md).
+
+On Unix, SIGINT and SIGTERM close the listeners, media sessions, and PTYs, remove the
+discovery record, and exit cleanly.
 
 ## Codex through ACP
 

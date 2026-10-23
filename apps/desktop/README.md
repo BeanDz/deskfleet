@@ -39,8 +39,11 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 `useFleetStore` serves sample data from
 `src/renderer/src/stores/placeholder-fleet.ts`. The team switcher, settings,
-workspace and terminal creation, target and provider pickers, Send, file diffs,
-session transcript, terminal I/O, and remote desktop connection are placeholders.
+workspace creation, target and provider pickers, Send, file diffs, and session
+transcript are placeholders. The real local machine is discovered separately
+through the daemon; its desktop route supports live WebRTC playback and its
+**New terminal** action opens a native PTY over a WebRTC DataChannel. Sample
+machines and their workspace/worktree terminals remain placeholders.
 Placeholder controls are labelled, `aria-disabled`, and do nothing. They use
 `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
 
@@ -66,6 +69,7 @@ machines start collapsed and report when they were last seen.
 | `/worktrees/:worktreeId` | Directory bindings, agent sessions, and terminals of one worktree |
 | `/sessions/:sessionId` | A session's title, location, and composer |
 | `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
+| `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
 | `/settings` | `PlaceholderView` |
 
@@ -88,10 +92,42 @@ describes its target worktree.
 
 `TerminalSurface` wraps xterm.js and its fit addon. It fits the terminal to its
 container on resize and disposes of it on unmount. The terminal view remounts it
-for each terminal session. With no session transport connected, it displays a
+for each terminal session. The real local machine lists daemon-owned sessions in
+tabs and supports dialing new or existing shells, live input/output, resize,
+reattachment, and explicit hangup. Switching tabs, leaving the view or quitting
+Electron leaves shells running. Closing a tab hangs up only its shell and removes
+its daemon history. Daemon shutdown terminates processes while preserving their
+history; after restart they appear interrupted and read-only. Sample terminals display a
 dimmed notice with input disabled and the cursor hidden. xterm.js uses an injected
 stylesheet, which the renderer CSP's `style-src 'unsafe-inline'` permits. It
 loads only with the terminal route's chunk.
+
+The data-only connection reuses authenticated SDP/ICE signaling without media
+tracks or screen capture. Dial/hangup uses signaling and remains available without
+a data peer. Output is acknowledged after xterm consumes it, and reconnecting
+replays full persisted history. The visible scrollback starts at 5,000 lines;
+**Load more history** increases it without changing the daemon's retention. See
+[terminal integration](../../agents/docs/terminals.md) for the wire contract and
+the remaining cross-machine signaling work.
+
+## Desktop playback
+
+Run `mise run daemon:dev` in another terminal, then open **Remote desktop** under
+the real local machine. Select a display and a codec supported by both the native
+encoder and Chromium, then connect. System audio is optional and defaults off.
+The video surface hides Chromium's playback controls; the page provides its own
+fullscreen action. Disconnect or leave the route to release capture; the daemon
+keeps running.
+
+Electron's main process discovers the local daemon through
+`~/.deskfleet/daemon.json`. Set `DESKFLEET_DAEMON_DIRECTORY` in both processes to
+use an isolated instance. The preload carries signaling and control only;
+Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Sample catalog
+machines are never mapped to the local daemon. Central server signaling and
+keyboard/mouse control are not connected yet.
+
+See [media integration](../../agents/docs/media.md) for supported capture
+platforms, permissions, ownership, and the native pipeline.
 
 ## Tray lifecycle
 
@@ -146,7 +182,9 @@ repository content are untrusted display data.
 Bundled builds load from the privileged `deskfleet-app://bundle/` scheme, which
 serves only files inside `out/renderer`. Development builds accept only the fixed
 loopback Vite URL. Each build injects its Content Security Policy into
-`index.html`, and production builds forbid network connections from the renderer.
+`index.html`. Production builds forbid renderer HTTP/WebSocket connections;
+WebRTC carries peer media and a narrow preload API carries local signaling. The
+media policy permits local streams.
 The window denies new windows, navigation, and Chromium permission requests.
 Routing uses hash history so every route stays on the single bundled document.
 
@@ -182,6 +220,8 @@ real artwork of the same sizes.
 ```sh
 mise run check:desktop-types  # vue-tsc over all processes, configs, and scripts
 mise run check:desktop        # Vitest: main/shared in Node, renderer in happy-dom
+mise run desktop:smoke-media  # real Chromium/native H.264 decode; no screen capture
+mise run desktop:smoke-terminal  # real PTY I/O, resize, and reattachment over WebRTC
 ```
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The

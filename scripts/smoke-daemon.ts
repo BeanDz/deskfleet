@@ -17,6 +17,7 @@ for (const key of Object.keys(environment)) {
   if (/^(PATH|NODE_PATH|NODE_OPTIONS)$/iu.test(key)) delete environment[key]
 }
 environment.PATH = ""
+environment.DESKFLEET_DAEMON_DIRECTORY = join(directory, "control")
 
 try {
   copyFileSync(join(output, executableName), command)

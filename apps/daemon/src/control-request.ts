@@ -1,0 +1,84 @@
+import type { ControlMethod, ControlMethods, ControlRequest } from "./control-protocol.ts"
+
+function object(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object")
+  return value as Record<string, unknown>
+}
+
+function sessionId(value: unknown): void {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(value)) {
+    throw new Error("Invalid desktop session ID")
+  }
+}
+
+function uint(value: unknown, label: string, positive = false): void {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < (positive ? 1 : 0) || value > 0xffff_ffff) {
+    throw new Error(`Invalid ${label}`)
+  }
+}
+
+export function validateControlParams<M extends ControlMethod>(method: M, value: unknown): ControlMethods[M]["params"] {
+  const params = object(value)
+  switch (method) {
+    case "hello":
+      if (typeof params.token !== "string") throw new Error("Missing authentication token")
+      break
+    case "capabilities":
+    case "terminalList":
+      break
+    case "terminalDial":
+      sessionId(params.terminalId)
+      if (params.mode === "resume") break
+      if (params.mode !== "create") throw new Error("Invalid terminal dial mode")
+      for (const key of ["cols", "rows"]) {
+        uint(params[key], `terminal ${key}`, true)
+        if ((params[key] as number) > 1000) throw new Error(`Invalid terminal ${key}`)
+      }
+      if (params.cwd !== undefined && (typeof params.cwd !== "string" || params.cwd.length > 4096)) throw new Error("Invalid terminal working directory")
+      break
+    case "terminalHangup":
+      sessionId(params.terminalId)
+      break
+    case "offer":
+    case "terminalOffer":
+      sessionId(params.sessionId)
+      if (typeof params.sdp !== "string" || !params.sdp || params.sdp.length > 192 * 1024) throw new Error("Invalid SDP offer")
+      if (method === "terminalOffer") break
+      if (params.codec !== "h264" && params.codec !== "h265" && params.codec !== "av1") throw new Error("Invalid video codec")
+      if (typeof params.audio !== "boolean") throw new Error("Invalid audio setting")
+      break
+    case "candidate": {
+      sessionId(params.sessionId)
+      const candidate = object(params.candidate)
+      if (typeof candidate.candidate !== "string" || candidate.candidate.length > 16 * 1024) throw new Error("Invalid ICE candidate")
+      for (const key of ["sdpMid", "usernameFragment"]) {
+        if (candidate[key] !== undefined && typeof candidate[key] !== "string") throw new Error(`Invalid ICE ${key}`)
+      }
+      if (candidate.sdpMlineIndex !== undefined) {
+        uint(candidate.sdpMlineIndex, "ICE media index")
+        if ((candidate.sdpMlineIndex as number) > 0xffff) throw new Error("Invalid ICE media index")
+      }
+      break
+    }
+    case "start":
+      sessionId(params.sessionId)
+      uint(params.displayId, "display ID")
+      if (params.fps !== undefined) uint(params.fps, "frame rate", true)
+      if (params.bitrateBps !== undefined) uint(params.bitrateBps, "bitrate", true)
+      break
+    case "close":
+      sessionId(params.sessionId)
+      break
+    default:
+      throw new Error("Unknown local daemon operation")
+  }
+  return params as unknown as ControlMethods[M]["params"]
+}
+
+export function parseControlRequest(value: unknown): ControlRequest {
+  const request = object(value)
+  if (!Number.isSafeInteger(request.id) || (request.id as number) < 0) throw new Error("Invalid request ID")
+  const method = request.method as ControlMethod
+  const params = validateControlParams(method, request.params)
+  return { id: request.id, method, params } as ControlRequest
+}

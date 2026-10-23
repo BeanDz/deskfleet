@@ -29,6 +29,12 @@ export const router = createRouter({
       props: true,
     },
     {
+      path: "/machines/:machineId/terminals",
+      name: "machine-terminals",
+      component: () => import("../views/TerminalView.vue"),
+      props: true,
+    },
+    {
       path: "/terminals/:terminalId",
       name: "terminal",
       component: () => import("../views/TerminalView.vue"),

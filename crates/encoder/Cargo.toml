@@ -1,0 +1,58 @@
+[package]
+name = "deskfleet-encoder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Hardware video encoding abstraction with platform-specific backends"
+
+[lints]
+workspace = true
+
+[dependencies]
+deskfleet-capture = { workspace = true }
+tracing = { workspace = true }
+opus = { workspace = true }
+# Force static libopus for the standalone SEA addon.
+audiopus_sys = { version = "0.2", features = ["static"] }
+
+[package.metadata.cargo-shear]
+ignored = ["audiopus_sys"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = { workspace = true, features = [
+    "CFNumber",
+    "CFString",
+    "CFDictionary",
+] }
+objc2-core-media = { workspace = true, features = [
+    "CMBlockBuffer",
+    "CMFormatDescription",
+    "CMFormatDescriptionBridge",
+    "CMSampleBuffer",
+    "CMTime",
+] }
+objc2-core-video = { workspace = true, features = [
+    "CVBuffer",
+    "CVImageBuffer",
+    "CVPixelBuffer",
+    "CVPixelBufferIOSurface",
+    "CVReturn",
+    "objc2-io-surface",
+] }
+objc2-io-surface = { workspace = true, features = [
+    "IOSurfaceRef",
+] }
+objc2-video-toolbox = { workspace = true, features = [
+    "VTCompressionProperties",
+    "VTCompressionSession",
+    "VTErrors",
+    "VTSession",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+deskfleet-nvenc = { workspace = true }
+deskfleet-nvenc-sys = { workspace = true }
+windows = { workspace = true }

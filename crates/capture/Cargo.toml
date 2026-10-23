@@ -1,0 +1,50 @@
+[package]
+name = "deskfleet-capture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Screen capture abstraction with platform-specific backends"
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = { workspace = true }
+objc2-core-audio-types = { workspace = true }
+dispatch2 = { workspace = true }
+objc2 = { workspace = true }
+objc2-core-media = { workspace = true, features = ["CMBlockBuffer", "CMSampleBuffer", "CMTime"] }
+objc2-core-video = { workspace = true, features = [
+    "CVBuffer",
+    "CVImageBuffer",
+    "CVPixelBuffer",
+    "CVPixelBufferIOSurface",
+    "objc2-io-surface",
+] }
+objc2-foundation = { workspace = true, features = [
+    "NSArray",
+    "NSError",
+    "NSString",
+    "NSObject",
+    "NSObjCRuntime",
+] }
+objc2-core-foundation = { workspace = true }
+objc2-core-graphics = { workspace = true, features = ["CGColorSpace", "CGDirectDisplay"] }
+objc2-io-surface = { workspace = true, features = [
+    "IOSurfaceRef",
+    "IOSurfaceTypes",
+] }
+objc2-screen-capture-kit = { workspace = true, features = [
+    "SCShareableContent",
+    "SCStream",
+    "SCError",
+] }
+
+[dependencies]
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true }

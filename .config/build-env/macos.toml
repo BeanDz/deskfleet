@@ -1,0 +1,7 @@
+# Use the active Xcode/Command Line Tools toolchain even when Nix precedes it on PATH.
+CC = "/usr/bin/clang"
+CXX = "/usr/bin/clang++"
+CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "/usr/bin/clang"
+CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "/usr/bin/clang"
+# Host library paths can otherwise embed Nix libiconv into the standalone addon.
+LIBRARY_PATH = ""

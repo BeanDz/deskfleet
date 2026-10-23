@@ -8,8 +8,11 @@ This document describes the planned system. The current implementation contains
 the Rust resource model, an Actix Web liveness endpoint, and an independent
 TypeScript daemon calling a napi-rs addon. The daemon runs from source or a SEA
 executable, exposes native information and a local health endpoint, and runs
-Codex CLI sessions through ACP. The Electron client is an initial Vue shell with
-a sandboxed renderer and a tray icon.
+Codex CLI sessions through ACP. Native WebRTC peers, DataChannels, and on-demand
+capture/encoding are available through the daemon's native API. The Electron
+client uses authenticated local IPC for desktop signaling and Chromium WebRTC
+for decoding and playback in its sandboxed Vue renderer. It stays in the tray
+independently of the daemon.
 
 ## Components
 
@@ -162,6 +165,7 @@ created on demand.
 | --- | --- |
 | Authentication, enrollment, catalog, and history | HTTPS |
 | Presence, history synchronization, and WebRTC signaling | Authenticated WebSocket or HTTPS streams |
+| Terminal dial, hangup, catalog and lifecycle events | Authenticated signaling; IPC for the local client |
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
 | Desktop video/audio | WebRTC media tracks |
 | Desktop input | WebRTC DataChannel |
@@ -171,6 +175,22 @@ Deploy STUN and TURN alongside signaling. TURN provides relay access when peers
 cannot connect directly. Desktop streaming, terminal traffic, and bulk results
 need flow control appropriate to their latency and throughput; validate this
 with the selected WebRTC implementation.
+
+The native transport uses `webrtc-rs` with configurable STUN/TURN servers,
+trickle ICE, reliable ordered DataChannels, RTP media tracks, and RTCP feedback.
+`PeerSessions` gives the daemon ownership of peer creation and shutdown. These
+are exposed to the local Electron client over authenticated Unix-domain sockets
+or Windows named pipes. Central server signaling, remote enrollment, and remote
+operation routing remain to be connected. Chromium receives the media into a
+standard HTML video element; a separate native GPU rendering window is deferred.
+See [native media](media.md) for codec support, capture lifecycle, and validation.
+
+Electron terminals use a data-only peer on the same signaling infrastructure.
+The daemon owns native PTYs independently of their viewers; disconnect detaches,
+and an existing terminal can be listed and reattached without restarting its
+shell. The UI supports local machine-scoped terminals. See
+[terminal integration](terminals.md) for dial/hangup, durable history, and flow
+control.
 
 Git inspection starts with the Git CLI's machine-readable output. Resolve each
 directory to its checkout and retrieve branch, HEAD, status, and diffs. Query a
@@ -194,8 +214,10 @@ Synchronization must tolerate retries and distinguish incomplete history from a
 complete recording. Choose the database, event format, and replay mechanism when
 implementing persistence.
 
-Live commands require an available target machine. Terminal byte streams and
-desktop media are transient; recording would be a separate feature.
+Live commands require an available target machine. Terminal output is persisted
+on the owning daemon until explicit hangup so a different client can reconstruct
+the session. Reconnecting does not restart the shell. Daemon restart retains the
+transcript and marks lost processes interrupted. Desktop media remains transient.
 
 Authorize history access, prompts, approvals, terminal input, and desktop control
 as separate actions. Both the server and target daemon enforce the caller's
@@ -236,17 +258,21 @@ when implementing the platform backend.
 
 ## Repository and protocol
 
-The Rust workspace has five crates:
+The Rust workspace contains:
 
 | Crate | Responsibility |
 | --- | --- |
 | `deskfleet-model` | Resource IDs, directory bindings, and session associations |
 | `deskfleet-protocol` | Shared wire contracts and protocol version |
 | `deskfleet-native` | Native capabilities independent of Node.js |
+| `deskfleet-capture` | Native display capture and retained GPU surfaces |
+| `deskfleet-encoder` | VideoToolbox/NVENC video encoding and Opus audio encoding |
+| `deskfleet-nvenc` | Windows NVENC session and D3D11 resource ownership |
+| `deskfleet-nvenc-sys` | Windows NVENC FFI and runtime driver loading |
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 
-Dependencies flow `server -> protocol -> model`, `node -> native`, and
+Dependencies flow `server -> protocol -> model`, `node -> native -> capture/encoder`, and
 `@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace currently contains
 the daemon, the desktop client, and the native package. TypeScript wire types
 should derive from the same authoritative contracts as Rust; napi declarations
@@ -273,8 +299,8 @@ continues after closing the client, reconnecting restores the session view, and
 synchronized history remains available while the machine is offline.
 
 MCP coordination and desktop control follow that workflow. Remaining choices
-include the WebRTC library, provider distribution, terminal/capture backends,
-and persistence schema.
+include provider distribution, terminal backends, Linux capture/encoding,
+authenticated signaling, and persistence schema.
 
 ## References
 

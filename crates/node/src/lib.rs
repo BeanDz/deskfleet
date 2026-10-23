@@ -2,6 +2,16 @@
 
 use napi_derive::napi;
 
+mod media;
+mod rtc;
+mod terminal;
+
+pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
+pub use rtc::{
+    IceCandidate, IceServer, NativePeer, PeerConfig, PeerEvent, VideoCodec, create_peer,
+};
+pub use terminal::{NativeTerminal, TerminalConfig, TerminalEvent, create_terminal};
+
 /// Build information for the loaded native addon.
 #[napi(object)]
 pub struct NativeInfo {

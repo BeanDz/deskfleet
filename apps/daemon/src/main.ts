@@ -2,6 +2,7 @@ import { isSea } from "node:sea"
 import { parseArgs } from "node:util"
 import { nativeInfo } from "@deskfleet/native"
 import { startDaemon } from "./daemon.ts"
+import { daemonControlDirectory } from "./control-discovery.ts"
 import { runAgent } from "./agent-cli.ts"
 
 function fail(error: unknown) {
@@ -43,7 +44,7 @@ async function main() {
     throw new Error("--port must be an integer from 0 to 65535")
   }
 
-  const daemon = await startDaemon(port)
+  const daemon = await startDaemon(port, { controlDirectory: daemonControlDirectory() })
   const shutdown = () => {
     process.off("SIGINT", shutdown)
     process.off("SIGTERM", shutdown)

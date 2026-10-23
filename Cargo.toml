@@ -1,8 +1,12 @@
 [workspace]
 members = [
     "apps/server",
+    "crates/capture",
+    "crates/encoder",
     "crates/model",
     "crates/native",
+    "crates/nvenc",
+    "crates/nvenc-sys",
     "crates/node",
     "crates/protocol",
 ]
@@ -18,12 +22,18 @@ repository = "https://github.com/yet-another-ai/deskfleet"
 publish = false
 
 [workspace.dependencies]
+deskfleet-capture = { path = "crates/capture" }
+deskfleet-encoder = { path = "crates/encoder" }
+deskfleet-nvenc = { path = "crates/nvenc" }
+deskfleet-nvenc-sys = { path = "crates/nvenc-sys" }
 deskfleet-model = { path = "crates/model" }
 deskfleet-native = { path = "crates/native" }
 deskfleet-protocol = { path = "crates/protocol" }
 
 actix-web = { version = "4.17", default-features = false, features = ["macros"] }
-napi = { version = "3.15", default-features = false, features = ["napi8", "dyn-symbols"] }
+async-trait = "0.1"
+bytes = "1"
+napi = { version = "3.15", default-features = false, features = ["napi8", "dyn-symbols", "tokio_rt"] }
 napi-build = "2.6"
 napi-derive = "3.6"
 serde = { version = "1", features = ["derive"] }
@@ -32,6 +42,34 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["serde"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+webrtc = "0.17"
+opus = "0.3"
+portable-pty = "0.9"
+filedescriptor = "0.8"
+nix = { version = "0.28", features = ["signal"] }
+libloading = "0.9"
+
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-core-media = "0.3"
+objc2-core-audio-types = "0.3"
+objc2-core-video = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
+objc2-foundation = "0.3"
+objc2-io-surface = "0.3"
+objc2-screen-capture-kit = "0.3"
+objc2-video-toolbox = "0.3"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

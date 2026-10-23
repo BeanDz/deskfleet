@@ -1,5 +1,6 @@
 import { defineStore } from "pinia"
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
+import type { LocalDesktopTarget } from "../../../shared/desktop-media.ts"
 import type {
   AgentSessionSummary,
   MachineSummary,
@@ -8,6 +9,7 @@ import type {
   WorktreeSummary,
 } from "./fleet-types.ts"
 import { placeholderMachines, placeholderTeam } from "./placeholder-fleet.ts"
+import { useTerminalsStore } from "./terminals.ts"
 
 export interface WorktreeLocation {
   machine: MachineSummary
@@ -50,10 +52,35 @@ function* worktreeLocations(machines: MachineSummary[]): Generator<WorktreeLocat
 /** The team's resource catalog and the worktree a new agent session starts in. */
 export const useFleetStore = defineStore("fleet", () => {
   const team = ref(placeholderTeam)
-  const machines = ref<MachineSummary[]>(placeholderMachines)
+  const localDesktopTarget = ref<LocalDesktopTarget>({
+    id: "local-daemon", name: "localhost", online: false, desktop: false,
+  })
+  const machines = ref<MachineSummary[]>([
+    { ...localDesktopTarget.value, local: true, terminals: [], workspaces: [] },
+    ...placeholderMachines.map((machine) => ({ ...machine, local: false })),
+  ])
+  const terminals = useTerminalsStore()
+  watch(() => terminals.sessions, (sessions) => {
+    machines.value.find(({ id }) => id === "local-daemon")!.terminals = sessions
+  }, { immediate: true })
+  let refreshingTarget: Promise<LocalDesktopTarget> | null = null
+
+  function refreshLocalDesktop(): Promise<LocalDesktopTarget> {
+    refreshingTarget ??= window.deskfleet.desktop.target().catch((error: unknown) => ({
+      ...localDesktopTarget.value,
+      online: false,
+      error: error instanceof Error ? error.message : String(error),
+    })).then((target) => {
+      localDesktopTarget.value = target
+      const local = machines.value.find(({ id }) => id === "local-daemon")!
+      Object.assign(local, { name: target.name, online: target.online, desktop: target.desktop })
+      return target
+    }).finally(() => { refreshingTarget = null })
+    return refreshingTarget
+  }
   // Offline machines start collapsed; their catalog may be stale.
   const collapsedMachineIds = ref(
-    new Set(machines.value.filter((machine) => !machine.online).map((machine) => machine.id)),
+    new Set(machines.value.filter((machine) => !machine.online && machine.id !== "local-daemon").map((machine) => machine.id)),
   )
 
   const initialTarget =
@@ -104,6 +131,8 @@ export const useFleetStore = defineStore("fleet", () => {
   return {
     team,
     machines,
+    localDesktopTarget,
+    refreshLocalDesktop,
     newSessionTarget,
     findMachine,
     findWorktree,

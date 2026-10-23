@@ -30,11 +30,11 @@ afterEach(() => {
   i18n.global.locale.value = "en-US"
 })
 
-test("a new session targets a worktree on the local machine", async () => {
+test("a new session can still browse the sample worktree catalog", async () => {
   const wrapper = await mountApp()
 
   expect(wrapper.get("h1").text()).toBe("Start an agent session")
-  expect(chips(wrapper)).toEqual(["development-boxThis machine", "storefront", "main", "Codex"])
+  expect(chips(wrapper)).toEqual(["development-box", "storefront", "main", "Codex"])
   const send = wrapper.get('[aria-label="Send (not available yet)"]')
   expect(send.attributes("aria-disabled")).toBe("true")
 })
@@ -124,7 +124,7 @@ test("a worktree page lists its terminals", async () => {
   expect(create.attributes("aria-disabled")).toBe("true")
 })
 
-test("only machines with a display offer remote desktop", async () => {
+test("desktop navigation includes the local daemon and graphical sample machines", async () => {
   const wrapper = await mountApp()
   await wrapper
     .findAll("button[aria-expanded]")
@@ -133,17 +133,16 @@ test("only machines with a display offer remote desktop", async () => {
 
   const desktops = wrapper.findAll("a").filter((a) => a.text() === "Remote desktop")
   expect(desktops.map((a) => a.attributes("href"))).toEqual([
+    "#/machines/local-daemon/desktop",
     "#/machines/machine-development-box/desktop",
   ])
 
-  await desktops[0]!.trigger("click")
+  await desktops[1]!.trigger("click")
   await vi.waitFor(() =>
     expect(wrapper.get("main header").text()).toBe("Remote desktop development-box"),
   )
   expect(wrapper.text()).toContain("Remote desktop is not available yet.")
-  expect(wrapper.get('[title="Connect (not available yet)"]').attributes("aria-disabled")).toBe(
-    "true",
-  )
+  expect(wrapper.get("main").findAll("button").some((button) => button.text() === "Connect")).toBe(false)
 })
 
 test("the desktop page explains why a machine cannot be shown", async () => {

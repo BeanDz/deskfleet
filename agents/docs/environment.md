@@ -24,6 +24,18 @@ versions and available platform metadata. `Cargo.lock` owns Rust dependencies;
 `pnpm-lock.yaml` owns JavaScript dependencies. Cargo's `rust-version` declares
 compiler requirements; it does not select the installed toolchain.
 
+Native media builds use locked CMake 3.31 to compile bundled Opus, plus the host C/C++
+toolchain. On macOS install the Xcode command-line tools. mise loads
+`.config/build-env/macos.toml` to select Apple Clang for C/C++ and Rust linking,
+even if Nix's compiler wrappers precede it on `PATH`. It also clears the inherited
+`LIBRARY_PATH` for project commands so the addon links Apple's system libraries
+instead of embedding paths to a local Nix store. These settings apply to both
+`mise run` and `mise exec`; other platforms keep their existing toolchains.
+On Windows install the Windows SDK and LLVM/libclang for NVENC header generation,
+setting
+`LIBCLANG_PATH` to LLVM's `bin` directory when it is not discovered automatically.
+See [native media](media.md) for static linkage and platform support.
+
 After changing a tool declaration, run `mise lock` and `mise install --locked`,
 then include the configuration and lockfile changes together.
 

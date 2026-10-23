@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
-import type { NativeInfo } from "./bindings.d.ts"
+import type { DisplayInfo, NativeInfo, NativePeer, NativeTerminal, PeerConfig, TerminalConfig } from "./bindings.d.ts"
 
-export type { NativeInfo } from "./bindings.d.ts"
+export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec } from "./bindings.d.ts"
 
 type Bindings = typeof import("./bindings.d.ts")
 let bindings: Bindings | undefined
@@ -45,4 +45,20 @@ function loadBindings(): Bindings {
 
 export function nativeInfo(): NativeInfo {
   return (bindings ??= loadBindings()).nativeInfo()
+}
+
+export function createPeer(config: PeerConfig = {}): Promise<NativePeer> {
+  return (bindings ??= loadBindings()).createPeer(config)
+}
+
+export function createTerminal(config: TerminalConfig): Promise<NativeTerminal> {
+  return (bindings ??= loadBindings()).createTerminal(config)
+}
+
+export function supportedVideoCodecs(): Promise<string[]> {
+  return (bindings ??= loadBindings()).supportedVideoCodecs()
+}
+
+export function captureDisplays(): Promise<DisplayInfo[]> {
+  return (bindings ??= loadBindings()).captureDisplays()
 }

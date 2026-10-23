@@ -10,6 +10,11 @@ rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustf
 node = "24.21.0"
 pnpm = "12.14.0"
 "cargo:cargo-shear" = "1.13.5"
+cmake = "3.31.12"
+
+[env]
+# Missing platform files are skipped; macOS uses the Apple native toolchain.
+_.file = ".config/build-env/{{ os() }}.toml"
 
 [tasks.install]
 description = "Install the locked TypeScript workspace dependencies"
@@ -85,10 +90,20 @@ description = "Run the Electron desktop app with Vite watchers"
 depends = ["install"]
 run = "pnpm --filter @deskfleet/desktop dev"
 
+[tasks."desktop:smoke-media"]
+description = "Verify Chromium decoding native WebRTC media without screen capture"
+depends = ["install"]
+run = ["cargo build -p deskfleet-native --example media_smoke --locked", "node apps/desktop/scripts/smoke-media.ts"]
+
 [tasks."desktop:build"]
 description = "Build the Electron main, preload, and renderer bundles"
 depends = ["install"]
 run = "pnpm --filter @deskfleet/desktop build"
+
+[tasks."desktop:smoke-terminal"]
+description = "Verify Chromium terminal I/O and PTY reattachment over WebRTC"
+depends = ["native:debug"]
+run = "node apps/desktop/scripts/smoke-terminal.ts"
 
 [tasks."desktop:package"]
 description = "Package the desktop app as installers for the host platform"

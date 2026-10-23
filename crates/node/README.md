@@ -2,7 +2,23 @@
 
 This crate exposes `deskfleet-native` through napi-rs. Its private pnpm package,
 `@deskfleet/native`, exports `nativeInfo()` with the addon version and Rust target
-OS/architecture.
+OS/architecture, `createPeer()` for WebRTC, and explicit
+`captureDisplays()` / `supportedVideoCodecs()` capability queries.
+
+`createTerminal({ cwd, cols, rows })` starts the OS user's default shell in a
+native PTY. Terminals provide async byte `write()`, `resize()`, `nextEvent()`, and
+`close()` methods. The daemon must continuously drain events into its session
+durable history and retain the terminal independently of any peer; closing a peer does
+not terminate the shell. Explicit terminal close or daemon shutdown terminates
+and reaps the owned process. Natural exit delivers queued output before the exit
+event. PTY operations run off Node's event loop, and the native output queue is
+bounded to 1 MiB.
+
+Peers provide async SDP/ICE operations, DataChannel send/receive events,
+`startDesktop()` / `stopDesktop()`, and `close()`. Capture and encoding stay in
+Rust; no raw GPU frames pass through JavaScript. Importing the package or
+creating a data-only peer does not initialize a graphical subsystem. See
+[native media](../../agents/docs/media.md) for lifecycle and platform support.
 
 Build from the repository root:
 
