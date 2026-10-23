@@ -81,6 +81,7 @@ The authenticated IPC connection supports these methods:
 | Method | Parameters | Result |
 | --- | --- | --- |
 | `catalogList` | none | Local context and all workspaces/worktrees |
+| `directoryList` | optional absolute `path` (defaults to daemon home) | Current path, parent, home, roots, and child directories |
 | `workspaceCreate` | `name`, `directories` | Workspace with its automatic main Worktree |
 | `workspaceUpdate` | `workspaceId`, `name`, `directories` | Workspace with its updated main context |
 | `workspaceDelete` | `workspaceId` | Empty result; rejects active Sessions |
@@ -99,6 +100,9 @@ the catalog.
 
 Electron exposes Workspace operations as `window.deskfleet.catalog` through the
 existing authenticated connection. Worktrees are read-only contexts in the UI.
+The folder picker uses `window.deskfleet.filesystem.listDirectories` on that
+connection. Directory enumeration and path handling run on the daemon; the
+renderer uses returned paths without applying its own operating system's rules.
 Managed Session creation derives detached Git worktrees from committed HEADs and
 maps each directory, including subdirectories, into them. Session destruction
 removes those generated checkouts (including local changes) and their catalog

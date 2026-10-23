@@ -17,6 +17,12 @@ hot reload and rebuilds the main and preload bundles in watch mode. It restarts
 Electron when either bundle changes. Quitting from the tray menu or pressing
 Ctrl-C stops the watchers.
 
+The local Agent stays running across client rebuilds and dev restarts. After
+changing daemon code or its IPC contracts, restart it from **Settings →
+Preferences → This computer → Run local Agent** by switching it off and on.
+This stops live terminals; saved catalog and terminal history remain. Restarting
+only the dev client continues to use the already-running daemon's code.
+
 `mise run desktop:build` writes the production bundles to `out/`. Run them with
 `mise exec -- pnpm --filter @deskfleet/desktop exec electron .`. Electron
 downloads its platform binary the first time it is resolved.
@@ -39,12 +45,17 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 `useFleetStore` loads the local daemon's persistent catalog through authenticated
 IPC. The desktop starts its bundled local Agent by default; use **Add workspace**
-beside the local machine. Supply its name and at least one absolute directory path.
+beside the local machine. Supply its name and select at least one directory in
+the in-app folder picker. The picker browses the daemon's filesystem, with home,
+root, parent navigation, and a hidden-folder toggle. Selecting an existing path
+opens the picker to replace it; **Add directory** opens it for another path.
 Directories have no names; the first is the default. Move paths up or down to
-change their order and default. Creating a Workspace creates its main Worktree
-automatically. Edit the Workspace to change its name and directories. Worktrees
-are read-only execution contexts: the main one uses actual configured directories,
-and Session-owned ones are created and removed by Session lifecycle operations.
+change their order and default. A new Workspace shows its directories and an
+empty Session list. Edit the Workspace to change its name and directories, or
+choose **New session** to target it in the composer. Worktrees are read-only
+execution contexts reached from their owning Session. They are created and
+removed by Session lifecycle operations. The catalog's main Worktree is internal
+storage for Workspace directories and is not a separate resource in the UI.
 Deleting a Workspace removes its catalog records, leaving source directories
 untouched; active Sessions prevent deletion. The UI refreshes on catalog changes,
 window focus, and the explicit refresh action; failures retain the displayed
@@ -73,25 +84,25 @@ The Windows and Linux controls overlay the window's top-right corner, which the
 rightmost header reserves with `.titlebar-overlay-inset`
 (`src/main/window-chrome.ts`).
 
-The tree follows the resource model: machines contain workspaces, workspaces
-contain worktrees, and each worktree lists its agent sessions. Terminal sessions
+The tree follows the resource model: machines contain workspaces, and workspaces
+list their Sessions. Each Session exposes its associated Worktree. Terminal sessions
 appear under whichever machine, workspace, or worktree owns them. Machines with a
 graphical session list Remote desktop first; headless machines omit it. Offline
 machines start collapsed and report when they were last seen.
 
 | Route | View |
 | --- | --- |
-| `/` | New session: a composer targeting a machine, workspace, worktree, and provider |
-| `/workspaces/:workspaceId` | Workspace name, ordered directories, default-directory terminal, and deletion |
-| `/worktrees/:worktreeId` | Directory bindings, agent sessions, and terminals of one worktree |
+| `/` | New session: a composer targeting a machine, workspace, and provider |
+| `/workspaces/:workspaceId` | Workspace name, ordered directories, Sessions, default-directory terminal, and deletion |
+| `/worktrees/:worktreeId` | Directory bindings and the owning Session of a session Worktree |
 | `/sessions/:sessionId` | A session's title, location, and composer |
 | `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
 | `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
 | `/settings/preferences` | Preferences, including the local Agent under This computer |
 
-A worktree page's New session action makes that worktree the new session's
-target.
+A Workspace page's New session action makes that Workspace the composer's target.
+Worktree links and lookups only resolve Session-owned contexts.
 
 Settings routes (`meta.fullWindow`) replace the sidebar and details panel with
 two panels: the sections on the left and the selected section on the right.
@@ -102,14 +113,15 @@ local Agent startup preference, run state, and retry.
 The details panel has two tabs:
 
 - **Details** lists the resource's owner and properties: a session's provider, a
-  terminal's scope and cwd, or a machine's display. Resources in a worktree also
-  list its directory bindings with each checkout's branch and HEAD.
+  terminal's scope and cwd, or a machine's display. Workspace details show its
+  configured directories; Session and Worktree details show the Session's paths
+  with each checkout's branch and HEAD when available.
 - **Changes** lists the worktree's uncommitted Git changes, grouped by checkout,
   with status letters as in `git status --short` and line counts. It is empty for
   machine and workspace terminals and for desktops, which belong to no worktree.
 
 `useRouteResource` resolves the route to that resource. The new session page
-describes its target worktree.
+describes its target Workspace.
 
 ## Terminal
 
@@ -275,7 +287,7 @@ mise run desktop:smoke-local-agent  # Settings toggle, daemon reuse, and indepen
 ```
 
 The catalog smoke uses an isolated daemon database and Electron profiles. It
-drives the production Vapor Workspace form and preload, changes the default by
+drives the production Vapor Workspace form, folder picker, and preload, changes the default by
 reordering paths, opens a real shell in that directory, and reopens the client to
 verify the saved catalog before deleting it.
 

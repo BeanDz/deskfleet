@@ -16,6 +16,9 @@ const api: DeskfleetDesktopApi = {
     deleteWorkspace: async () => { throw new Error("Daemon unavailable") },
     onChanged: () => () => {},
   },
+  filesystem: {
+    listDirectories: async () => { throw new Error("Daemon unavailable") },
+  },
   terminal: {
     list: async () => [],
     dial: async () => { throw new Error("Daemon unavailable") },

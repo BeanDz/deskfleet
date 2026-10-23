@@ -56,7 +56,6 @@ Team
     TerminalSessions [machine scope]
     Workspace
       Ordered directory paths [one or more; first is default]
-      Main Worktree [the configured directories]
       AgentSessions
         Managed Worktree [created and removed with the Session]
       TerminalSessions [machine, workspace, or worktree scope]
@@ -67,17 +66,19 @@ Team
 | Team | Membership and shared access boundary |
 | Machine | An enrolled daemon installation and its OS user execution context |
 | Workspace | A named, machine-local configuration of one or more ordered directory paths |
-| Worktree | The permanent main context or a temporary execution context owned by one Session |
+| Worktree | An execution context owned by one Session; the catalog also keeps an internal main context for Workspace directories |
 | Directory binding | An unnamed path with a stable position; position zero is the default directory |
 | AgentSession | A workspace session with its captured execution context and provider identity |
 | TerminalSession | A terminal owned by one Machine, Workspace, or Worktree, with a separate cwd |
 
 A Workspace must be created with at least one existing directory. Its paths are
 ordered and have no user-assigned aliases; the first path is the default working
-directory. Creating the Workspace also creates exactly one main Worktree in the
-same transaction. The main Worktree uses the actual configured directories.
-Updating the Workspace changes this main context without retargeting existing
-Session contexts.
+directory. The catalog stores these paths in one internal main Worktree created
+in the same transaction. The UI presents them as Workspace directories, without
+exposing that storage record as a separate Worktree. A new Workspace has no
+Sessions to display. New-session composition targets the Workspace; an existing
+Session exposes its own Worktree. Updating the Workspace changes its configured
+directories without retargeting existing Session contexts.
 
 Worktrees are not independently maintained resources. Each managed Session
 allocates its own Worktree automatically; destroying that Session removes its
@@ -96,7 +97,6 @@ Machine: development-box
     Directories:
       /code/storefront-web  [default]
       /code/storefront-api
-    Main Worktree: the two configured directories
     Session: investigate checkout failures
       Worktree: automatically generated checkouts for this Session
 ```
@@ -163,6 +163,14 @@ The daemon validates Workspace paths as absolute, existing directories. Committe
 changes broadcast `catalogChanged` to authenticated clients. Removing a Workspace
 never removes its configured directories from the filesystem.
 
+Workspace forms choose paths through a reusable in-app folder dialog. Its browser
+callback lists directories on the target daemon over authenticated IPC, returning
+the current path, parent, home, roots, and child directories. The client treats
+these paths as opaque, so browsing uses the executing machine's filesystem and
+path conventions. The current client connects this dialog to the local daemon;
+remote routing can supply the same browser callback when connected. It does not
+use the operating system's folder picker.
+
 Session creation allocates a durable Session ID and creates Git worktrees beneath
 `<daemon directory>/session-worktrees/<session ID>/`. A manifest records generated
 paths for cleanup after restart. Failure rolls back generated checkouts. Explicit
@@ -175,7 +183,9 @@ The Electron renderer consumes these operations through its narrow preload bridg
 It displays real local resources and supports opening a machine-owned terminal
 at a selected binding's path. The working directory does not change terminal
 ownership. Accounts, organizations, remote enrollment, central catalog HTTP
-operations, daemon synchronization, and agent-session UI are not yet connected.
+operations, daemon synchronization, and agent-session execution/history UI are
+not yet connected. The client lists Session identities from their owned Worktrees
+and exposes each Worktree from its Session, without inventing provider metadata.
 Daemon terminal transcripts retain their existing storage.
 
 ## Daemon and session lifecycle

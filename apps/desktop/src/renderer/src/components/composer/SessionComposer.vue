@@ -1,19 +1,17 @@
 <script setup lang="ts">
-import { ArrowUp, Bot, Folder, FolderTree, Monitor } from "@lucide/vue"
+import { ArrowUp, Bot, Folder, Monitor } from "@lucide/vue"
 import { useTextareaAutosize } from "@vueuse/core"
 import { ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { WorktreeLocation } from "../../stores/fleet.ts"
-import { useWorktreeLabel } from "../../composables/useWorktreeLabel.ts"
+import type { WorkspaceLocation } from "../../stores/fleet.ts"
 
 defineProps<{
-  location: WorktreeLocation | null
-  /** Shows where a new session will start: its machine, workspace, worktree, and provider. */
+  location: WorkspaceLocation | null
+  /** Shows where a new session will start: its machine, workspace, and provider. */
   showTarget?: boolean
 }>()
 
 const { t } = useI18n()
-const worktreeLabel = useWorktreeLabel()
 // Codex is the only provider the daemon supports so far.
 const provider = "Codex"
 
@@ -35,10 +33,6 @@ const placeholderTitle = (label: string) => t("common.placeholderControl", { lab
       <span class="ui-chip" :title="placeholderTitle(location.workspace.name)">
         <Folder :size="15" :stroke-width="1.75" aria-hidden="true" />
         {{ location.workspace.name }}
-      </span>
-      <span class="ui-chip" :title="placeholderTitle(worktreeLabel(location.worktree))">
-        <FolderTree :size="15" :stroke-width="1.75" aria-hidden="true" />
-        {{ worktreeLabel(location.worktree) }}
       </span>
       <span class="ui-chip" :title="placeholderTitle(t('composer.provider'))">
         <Bot :size="15" :stroke-width="1.75" aria-hidden="true" />

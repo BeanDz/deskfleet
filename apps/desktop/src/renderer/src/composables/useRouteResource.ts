@@ -43,7 +43,7 @@ export function useRouteResource() {
       }
       case "new-session": {
         const location = fleet.newSessionTarget
-        return location && { kind: "worktree", ...location }
+        return location && { kind: "workspace", ...location }
       }
       default:
         return null
@@ -54,8 +54,10 @@ export function useRouteResource() {
   const worktree = computed<WorktreeLocation | null>(() => {
     const value = resource.value
     if (!value || value.kind === "desktop" || value.kind === "workspace") return null
-    const { machine, workspace, worktree } = value
-    return workspace && worktree ? { machine, workspace, worktree } : null
+    if (value.kind === "terminal") {
+      return value.worktree ? fleet.findWorktree(value.worktree.id) : null
+    }
+    return value
   })
 
   return { resource, worktree }

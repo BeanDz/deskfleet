@@ -34,6 +34,7 @@ export class DesktopMediaController {
       case "terminalDial":
       case "terminalHangup":
       case "catalogList":
+      case "directoryList":
       case "workspaceCreate":
       case "workspaceUpdate":
       case "workspaceDelete": {

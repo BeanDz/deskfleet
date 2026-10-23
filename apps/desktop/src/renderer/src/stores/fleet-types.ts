@@ -2,9 +2,10 @@
 
 export interface AgentSessionSummary {
   id: string
-  title: string
+  title?: string
   /** The agent provider's user-facing name. */
-  provider: string
+  provider?: string
+  worktree: WorktreeSummary
 }
 
 /** A terminal owned by a machine, workspace, or worktree. Its cwd can change freely. */
@@ -32,28 +33,26 @@ export interface GitCheckoutSummary {
   changes: GitChange[]
 }
 
-/** An ordered path on the worktree's machine; the first path is the default. */
+/** An ordered path on the owning machine; the first path is the default. */
 export interface DirectoryBinding {
   path: string
   /** Undefined until inspected; null when the directory is not inside a Git checkout. */
   git?: GitCheckoutSummary | null
 }
 
+/** The execution context owned by one Session. */
 export interface WorktreeSummary {
   id: string
-  /** Absent for the workspace's main worktree. */
-  sessionId?: string
   directories: DirectoryBinding[]
-  /** Most recent first. */
-  sessions: AgentSessionSummary[]
   terminals: TerminalSessionSummary[]
 }
 
 export interface WorkspaceSummary {
   id: string
   name: string
+  directories: DirectoryBinding[]
+  sessions: AgentSessionSummary[]
   terminals: TerminalSessionSummary[]
-  worktrees: WorktreeSummary[]
 }
 
 export interface MachineSummary {

@@ -7,11 +7,12 @@ import { join } from "node:path"
 import { captureDisplays, supportedVideoCodecs, type NativePeer, type PeerConfig } from "@deskfleet/native"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
 import { MAX_CONTROL_MESSAGE_BYTES, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
-import { parseControlRequest } from "./control-request.ts"
+import { parseControlRequest, readControlRequestId } from "./control-request.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
 import { DaemonCatalog } from "./catalog.ts"
+import { listDirectories } from "./filesystem.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -95,9 +96,11 @@ class ControlConnection {
           const end = pending.indexOf(10)
           if (end < 0) break
           if (end > MAX_CONTROL_MESSAGE_BYTES) throw new Error("Local daemon request is too large")
-          const request = parseControlRequest(JSON.parse(pending.subarray(0, end).toString("utf8")))
+          const value: unknown = JSON.parse(pending.subarray(0, end).toString("utf8"))
+          const id = readControlRequestId(value)
           pending = pending.subarray(end + 1)
           try {
+            const request = parseControlRequest(value)
             const result = await this.#handle(request)
             if (request.method === "shutdown") {
               // Flush the acknowledgement before shutdown closes client sockets.
@@ -112,7 +115,7 @@ class ControlConnection {
             }
             this.#send({ id: request.id, result })
           } catch (error) {
-            this.#send({ id: request.id, error: message(error) })
+            this.#send({ id, error: message(error) })
             if (!this.#authenticated) {
               await new Promise<void>(resolve => this.#socket.end(resolve))
               return
@@ -144,6 +147,8 @@ class ControlConnection {
       case "shutdown":
         if (!this.#onShutdownRequested) throw new Error("Daemon shutdown is unavailable")
         return null
+      case "directoryList":
+        return listDirectories(request.params.path)
       case "catalogList":
       case "workspaceCreate":
       case "workspaceUpdate":

@@ -73,6 +73,19 @@ test("catalog changes have their own event stream and stop after owner disposal"
   expect(emitCatalog).toHaveBeenCalledTimes(1)
 })
 
+test("folder browsing forwards opaque paths to the daemon without creating a peer", async () => {
+  const { controller, client } = fixture()
+  const listing = { path: "Z:\\work", parentPath: "Z:\\", homePath: "C:\\Users\\agent", roots: [], directories: [] }
+  client.call.mockResolvedValue(listing)
+  await expect(controller.invoke("directoryList", {})).resolves.toEqual(listing)
+  expect(client.call).toHaveBeenLastCalledWith("directoryList", {})
+  await expect(controller.invoke("directoryList", { path: "Z:\\work" })).resolves.toEqual(listing)
+  expect(client.call).toHaveBeenLastCalledWith("directoryList", { path: "Z:\\work" })
+  await expect(controller.invoke("directoryList", { path: 42 })).rejects.toThrow()
+  expect(client.call).toHaveBeenCalledTimes(2)
+  expect(mock.connect).toHaveBeenCalledTimes(1)
+})
+
 test("dial and hangup use authenticated signaling even without a data peer", async () => {
   const { controller, client, event, emitTerminal, emit } = fixture()
   const dial = { mode: "create", terminalId: "shell-1", cols: 80, rows: 24 }

@@ -7,10 +7,12 @@ import TerminalSurface from "../components/terminal/TerminalSurface.vue"
 import TerminalWorkspace from "../components/terminal/TerminalWorkspace.vue"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useWorktreeLabel } from "../composables/useWorktreeLabel.ts"
+import { useSessionLabel } from "../composables/useSessionLabel.ts"
 
 const props = defineProps<{ terminalId?: string; machineId?: string }>()
 const { t } = useI18n()
 const worktreeLabel = useWorktreeLabel()
+const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const location = computed(() => props.terminalId ? fleet.findTerminal(props.terminalId) : null)
 // Retain the workspace while a hung-up terminal leaves the catalog and the route advances.
@@ -23,7 +25,9 @@ const localWorkspace = computed(() => props.machineId === "local-daemon"
   || (props.terminalId !== undefined && props.terminalId === lastLocalTerminalId.value))
 const scope = computed(() => localWorkspace.value
   ? [fleet.localDesktopTarget.name]
-  : [location.value?.machine.name, location.value?.workspace?.name, location.value?.worktree ? worktreeLabel(location.value.worktree) : undefined]
+  : [location.value?.machine.name, location.value?.workspace?.name,
+      location.value?.session ? sessionLabel(location.value.session) : undefined,
+      location.value?.worktree ? worktreeLabel() : undefined]
     .filter((name): name is string => name !== undefined),
 )
 const banner = computed(() => `\x1b[2m${t("terminal.unavailable")}\x1b[0m\n`)

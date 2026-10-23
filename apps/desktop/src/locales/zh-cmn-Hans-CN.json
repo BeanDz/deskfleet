@@ -46,25 +46,22 @@
   },
   "newSession": {
     "heading": "开始智能体会话",
-    "noTarget": "选择要在其中启动会话的工作树。"
+    "noTarget": "选择要在其中启动会话的工作区。"
   },
   "worktree": {
     "notFound": "该工作树不存在。",
     "directories": "目录",
-    "sessions": "智能体会话",
-    "noSessions": "还没有智能体会话。",
-    "newSession": "新会话",
     "terminals": "终端",
     "noTerminals": "没有终端。",
     "openTerminal": "打开终端",
     "openTerminalAt": "在 {path} 中打开终端",
-    "main": "主工作树",
-    "sessionLabel": "会话 {id}",
-    "manageWorkspace": "管理工作区目录"
+    "session": "会话"
   },
   "session": {
     "notFound": "该会话不存在。",
-    "historyUnavailable": "会话记录尚不可用。"
+    "historyUnavailable": "会话记录尚不可用。",
+    "label": "会话 {id}",
+    "worktree": "工作树"
   },
   "composer": {
     "label": "提示词",
@@ -127,7 +124,7 @@
     "details": "详情",
     "changes": "变更",
     "nothingSelected": "选择工作树、会话、终端或桌面以查看详情。",
-    "noWorktree": "仅显示工作树中资源的变更。",
+    "noWorktree": "Git 变更会显示在会话中。",
     "machine": "机器",
     "workspace": "工作区",
     "worktree": "工作树",
@@ -167,11 +164,10 @@
     "offline": "本机守护进程不可用，请刷新以重新连接。",
     "workspaceName": "名称",
     "directoryPath": "目录 {number}",
-    "absolutePath": "绝对路径",
     "removeDirectory": "移除目录 {number}",
     "addDirectory": "添加目录",
     "nameRequired": "请输入名称。",
-    "directoriesRequired": "请至少填写一个目录路径。",
+    "directoriesRequired": "请至少选择一个目录。",
     "create": "创建",
     "save": "保存",
     "saving": "保存中…",
@@ -180,15 +176,32 @@
     "defaultDirectory": "默认目录",
     "moveDirectoryUp": "上移目录 {number}",
     "moveDirectoryDown": "下移目录 {number}",
-    "newWorkspace": "新建工作区"
+    "newWorkspace": "新建工作区",
+    "duplicateDirectory": "此目录已添加。"
   },
   "workspace": {
     "notFound": "该工作区不存在。",
-    "worktrees": "工作树",
     "directoryCount": "{count} 个目录",
     "delete": "删除工作区",
     "deleteQuestion": "删除工作区“{name}”及其登记记录？磁盘上的目录将保留。",
     "edit": "编辑工作区",
-    "openDefaultTerminal": "在默认目录打开终端"
+    "openDefaultTerminal": "在默认目录打开终端",
+    "sessions": "会话",
+    "newSession": "新建会话",
+    "noSessions": "尚无会话。"
+  },
+  "folderPicker": {
+    "title": "选择文件夹",
+    "locations": "文件夹位置",
+    "location": "当前位置",
+    "home": "主目录",
+    "up": "上一级",
+    "loading": "正在加载文件夹…",
+    "retry": "重试",
+    "folders": "文件夹",
+    "openFolder": "打开 {name}",
+    "empty": "此位置没有文件夹。",
+    "showHidden": "显示隐藏文件夹",
+    "select": "选择此文件夹"
   }
 }

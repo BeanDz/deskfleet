@@ -46,6 +46,9 @@ const api: DeskfleetDesktopApi = {
       return () => ipcRenderer.removeListener(CATALOG_CHANGED_EVENT, handler)
     },
   },
+  filesystem: {
+    listDirectories: (path) => invokeDesktop("directoryList", path === undefined ? {} : { path }),
+  },
   terminal: {
     list: () => invokeDesktop("terminalList", {}),
     dial: (options) => invokeDesktop("terminalDial", options),

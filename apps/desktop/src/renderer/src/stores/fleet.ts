@@ -9,19 +9,24 @@ export interface WorkspaceLocation {
   machine: MachineSummary
   workspace: WorkspaceSummary
 }
-export interface WorktreeLocation extends WorkspaceLocation { worktree: WorktreeSummary }
-export interface SessionLocation extends WorktreeLocation { session: AgentSessionSummary }
+export interface SessionLocation extends WorkspaceLocation {
+  session: AgentSessionSummary
+  worktree: WorktreeSummary
+}
+/** Every worktree exposed by the client belongs to a Session. */
+export type WorktreeLocation = SessionLocation
 /** Ownership is explicit; a terminal's working directory never determines its scope. */
 export interface TerminalLocation {
   machine: MachineSummary
   workspace?: WorkspaceSummary
+  session?: AgentSessionSummary
   worktree?: WorktreeSummary
   terminal: TerminalSessionSummary
 }
 
 function* worktreeLocations(machines: MachineSummary[]): Generator<WorktreeLocation> {
   for (const machine of machines) for (const workspace of machine.workspaces) {
-    for (const worktree of workspace.worktrees) yield { machine, workspace, worktree }
+    for (const session of workspace.sessions) yield { machine, workspace, session, worktree: session.worktree }
   }
 }
 function* terminalLocations(machines: MachineSummary[]): Generator<TerminalLocation> {
@@ -29,17 +34,24 @@ function* terminalLocations(machines: MachineSummary[]): Generator<TerminalLocat
     for (const terminal of machine.terminals) yield { machine, terminal }
     for (const workspace of machine.workspaces) {
       for (const terminal of workspace.terminals) yield { machine, workspace, terminal }
-      for (const worktree of workspace.worktrees) {
-        for (const terminal of worktree.terminals) yield { machine, workspace, worktree, terminal }
+      for (const session of workspace.sessions) {
+        for (const terminal of session.worktree.terminals) yield { machine, workspace, session, worktree: session.worktree, terminal }
       }
     }
   }
 }
 function worktreeSummary(value: CatalogWorktree): WorktreeSummary {
-  return { id: value.id, sessionId: value.sessionId, directories: value.directories.map(directory => ({ ...directory, git: undefined })), sessions: [], terminals: [] }
+  return { id: value.id, directories: value.directories.map(directory => ({ ...directory, git: undefined })), terminals: [] }
 }
 function workspaceSummary(value: CatalogWorkspace): WorkspaceSummary {
-  return { id: value.id, name: value.name, worktrees: value.worktrees.map(worktreeSummary), terminals: [] }
+  const main = value.worktrees.find(worktree => worktree.sessionId === undefined)
+  return {
+    id: value.id,
+    name: value.name,
+    directories: main?.directories.map(directory => ({ ...directory, git: undefined })) ?? [],
+    sessions: value.worktrees.flatMap(worktree => worktree.sessionId === undefined ? [] : [{ id: worktree.sessionId, worktree: worktreeSummary(worktree) }]),
+    terminals: [],
+  }
 }
 
 /** Local daemon resources; database IDs and connection targets have separate identities. */
@@ -50,7 +62,7 @@ export const useFleetStore = defineStore("fleet", () => {
   const catalogError = ref<string | null>(null)
   const catalogLoading = ref(false)
   const catalogReady = ref(false)
-  const targetWorktreeId = ref<string | null>(null)
+  const targetWorkspaceId = ref<string | null>(null)
   const collapsedMachineIds = ref(new Set<string>())
   const terminals = useTerminalsStore()
   const localMachine = () => machines.value.find(({ id }) => id === "local-daemon")!
@@ -70,7 +82,7 @@ export const useFleetStore = defineStore("fleet", () => {
     return [...worktreeLocations(machines.value)].find(({ worktree }) => worktree.id === worktreeId) ?? null
   }
   function reconcileTarget(): void {
-    if (!findWorktree(targetWorktreeId.value)) targetWorktreeId.value = localMachine().workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === undefined)?.id ?? null
+    if (!targetWorkspaceId.value || !findWorkspace(targetWorkspaceId.value)) targetWorkspaceId.value = localMachine().workspaces[0]?.id ?? null
   }
   function applySnapshot(snapshot: CatalogSnapshot): void {
     catalogIdentity.value = { teamId: snapshot.teamId, machineId: snapshot.machineId }
@@ -137,7 +149,7 @@ export const useFleetStore = defineStore("fleet", () => {
     const existing = findWorkspace(value.id)
     if (existing) Object.assign(existing.workspace, workspaceSummary(value))
     else localMachine().workspaces.push(workspaceSummary(value))
-    reconcileTarget()
+    targetWorkspaceId.value = value.id
     return value
   }
   async function updateWorkspace(id: string, name: string, directories: CatalogDirectory[]): Promise<void> {
@@ -154,11 +166,7 @@ export const useFleetStore = defineStore("fleet", () => {
     reconcileTarget()
   }
   function findSession(sessionId: string): SessionLocation | null {
-    for (const location of worktreeLocations(machines.value)) {
-      const session = location.worktree.sessions.find(({ id }) => id === sessionId)
-      if (session) return { ...location, session }
-    }
-    return null
+    return [...worktreeLocations(machines.value)].find(({ session }) => session.id === sessionId) ?? null
   }
   function findTerminal(id: string): TerminalLocation | null {
     return [...terminalLocations(machines.value)].find(({ terminal }) => terminal.id === id) ?? null
@@ -166,14 +174,14 @@ export const useFleetStore = defineStore("fleet", () => {
   function findMachine(id: string): MachineSummary | null { return machines.value.find(machine => machine.id === id) ?? null }
   function isCollapsed(id: string): boolean { return collapsedMachineIds.value.has(id) }
   function toggleMachine(id: string): void { if (!collapsedMachineIds.value.delete(id)) collapsedMachineIds.value.add(id) }
-  function targetWorktree(id: string): void { targetWorktreeId.value = id }
-  const newSessionTarget = computed(() => findWorktree(targetWorktreeId.value))
+  function targetWorkspace(id: string): void { targetWorkspaceId.value = id }
+  const newSessionTarget = computed(() => targetWorkspaceId.value ? findWorkspace(targetWorkspaceId.value) : null)
 
   return {
     machines, catalogIdentity, catalogError, catalogLoading, canManageCatalog,
     localDesktopTarget, refreshLocalDesktop, refreshLocalCatalog, refreshLocal,
     createWorkspace, updateWorkspace, deleteWorkspace,
     newSessionTarget, findMachine, findWorkspace, findWorktree, findSession, findTerminal,
-    isCollapsed, toggleMachine, targetWorktree,
+    isCollapsed, toggleMachine, targetWorkspaceId, targetWorkspace,
   }
 })
