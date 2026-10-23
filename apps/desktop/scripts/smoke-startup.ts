@@ -76,8 +76,12 @@ async function evaluate<T>(expression: string): Promise<T> {
   })
 }
 
-async function probeBundledDaemon(): Promise<void> {
-  launch(["--deskfleet-daemon"])
+/** The app hosts the daemon in its own process and stops it when it quits. */
+async function probeHostedDaemon(): Promise<void> {
+  const hostProfile = join(directory, "host-profile")
+  await mkdir(hostProfile)
+  await writeFile(join(hostProfile, "settings.json"), JSON.stringify({ localAgentEnabled: true }))
+  launch([`--user-data-dir=${hostProfile}`])
   const control = await until(async () => {
     try { return await DaemonClient.connect(() => {}, () => {}, daemonDirectory) }
     catch (error) {
@@ -95,11 +99,12 @@ async function probeBundledDaemon(): Promise<void> {
     await control.call("close", { sessionId: "agent" })
   } finally {
     await peer.close()
-    try { await control.call("shutdown", {}) } finally { control.close() }
+    control.close()
   }
+  client!.kill("SIGTERM")
   const timer = setTimeout(() => client?.kill("SIGKILL"), 15_000)
   try { await exited } finally { clearTimeout(timer) }
-  assert.equal(client!.exitCode, 0, "Bundled daemon must finish authenticated shutdown")
+  assert.equal(client!.exitCode, 0, "Quitting the app must finish its daemon's shutdown")
   await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
 }
 
@@ -131,7 +136,7 @@ try {
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000,
   })
   assert.match(version.stdout, /\b2\.2\.2\b/u)
-  await probeBundledDaemon()
+  await probeHostedDaemon()
   console.log("Electron startup smoke passed: client, Codex adapter, and Agent signaling")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)

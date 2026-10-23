@@ -69,7 +69,8 @@
     "label": "Prompt",
     "placeholder": "Describe a task for the agent",
     "provider": "Agent provider",
-    "send": "Send"
+    "send": "Send",
+    "context": "Session context"
   },
   "terminal": {
     "new": "New terminal",
@@ -216,18 +217,15 @@
     "tool": "Tool call",
     "thinking": "Thinking",
     "plan": "Plan",
-    "startedNewTurn": "Started a new turn",
     "steered": "Steered the turn",
-    "backlog": "Candidate backlog",
+    "backlog": "Queued",
     "steer": "Steer now",
     "withdraw": "Withdraw",
     "retryInput": "Retry delivery",
     "uncertainInput": "Delivery could not be confirmed. Check the conversation before submitting again.",
     "permissions": "Permissions",
     "permissionRequired": "Permission required",
-    "permissionResolved": "Permission answered",
-    "permissionCancelled": "Permission cancelled",
-    "backlogHint": "Sent messages wait in the shared backlog.",
+    "backlogHint": "Messages you send now are queued.",
     "addToBacklog": "Add to backlog",
     "cancelTurn": "Cancel turn",
     "stop": "Stop agent",
@@ -274,8 +272,23 @@
       "failed": "Turn failed"
     },
     "creating": "Creating session…",
-    "stoppedHint": "Candidates wait until the agent is running.",
+    "stoppedHint": "Messages wait until the agent resumes.",
     "resumeUnavailable": "This provider cannot resume this session. Start a new session to continue.",
-    "inputInProgress": "In progress"
+    "inputInProgress": "In progress",
+    "awaitingApproval": "Awaiting approval",
+    "copy": "Copy message",
+    "copied": "Copied",
+    "working": "Working",
+    "workingFor": "Working for {duration}",
+    "worked": "Worked",
+    "workedFor": "Worked for {duration}",
+    "summary": {
+      "execute": "Ran {n} command | Ran {n} commands",
+      "edit": "Edited {n} file | Edited {n} files",
+      "read": "Read {n} file | Read {n} files",
+      "search": "Ran {n} search | Ran {n} searches",
+      "other": "Used {n} tool | Used {n} tools"
+    },
+    "sessionActions": "Session actions"
   }
 }

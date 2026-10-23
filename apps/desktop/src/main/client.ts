@@ -38,16 +38,20 @@ function start(): void {
     powerMonitor.on("shutdown", () => lifecycle.quit())
     const localAgent = new LocalAgentController(
       join(app.getPath("userData"), "settings.json"),
-      createLocalAgentRuntime({
-        executable: process.execPath,
-        appPath: app.getAppPath(),
-        packaged: app.isPackaged,
-        directory: daemonControlDirectory(),
-      }),
+      createLocalAgentRuntime({ directory: daemonControlDirectory() }),
       publishLocalAgentState,
     )
     installLocalAgentSettings(localAgent)
-    app.once("will-quit", () => localAgent.detach())
+    // The hosted daemon outlives windows but not the app. Exit once it has
+    // released its sessions, terminals, and discovery.
+    let closing: Promise<void> | undefined
+    app.on("will-quit", (event) => {
+      event.preventDefault()
+      closing ??= localAgent.close().then(
+        () => app.exit(0),
+        (error: unknown) => { console.error(error); app.exit(1) },
+      )
+    })
     await localAgent.initialize()
     if (lifecycle.quitting) return
     createTray({ show, quit: () => lifecycle.quit() })

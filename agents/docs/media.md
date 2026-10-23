@@ -5,7 +5,7 @@ The transport and media implementation is adapted from
 `e4b963274b4afae8a7b8065d9efe5c6770bf9339`: its `rust/capture`, `rust/encoder`,
 `rust/nvenc`, `rust/nvenc-sys`, and `rust/streamer` code. The original streamer's
 process and JSON-RPC service are replaced by reusable Rust APIs and a thin
-napi-rs boundary. The independent TypeScript daemon owns peer sessions.
+napi-rs boundary. The TypeScript daemon owns peer sessions.
 
 ## Transport
 

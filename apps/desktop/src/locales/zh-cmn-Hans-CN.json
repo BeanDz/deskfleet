@@ -69,7 +69,8 @@
     "label": "提示词",
     "placeholder": "描述要交给智能体的任务",
     "provider": "智能体提供方",
-    "send": "发送"
+    "send": "发送",
+    "context": "会话上下文"
   },
   "terminal": {
     "new": "新建终端",
@@ -216,18 +217,15 @@
     "tool": "工具调用",
     "thinking": "思考",
     "plan": "计划",
-    "startedNewTurn": "已开始新一轮",
     "steered": "已引导当前轮次",
-    "backlog": "候选积压列表",
+    "backlog": "排队中",
     "steer": "立即 Steer",
     "withdraw": "撤回",
     "retryInput": "重试投递",
     "uncertainInput": "无法确认是否已投递。再次提交前请检查对话。",
     "permissions": "权限",
     "permissionRequired": "需要授权",
-    "permissionResolved": "已回答权限请求",
-    "permissionCancelled": "权限请求已取消",
-    "backlogHint": "发送的消息将进入共享积压列表。",
+    "backlogHint": "现在发送的消息会进入队列。",
     "addToBacklog": "加入积压列表",
     "cancelTurn": "取消当前轮次",
     "stop": "停止 Agent",
@@ -274,8 +272,23 @@
       "failed": "本轮执行失败"
     },
     "creating": "正在创建会话…",
-    "stoppedHint": "候选消息会等待 Agent 运行后投递。",
+    "stoppedHint": "消息会在 Agent 恢复后发送。",
     "resumeUnavailable": "此提供方无法恢复该会话。请新建会话以继续工作。",
-    "inputInProgress": "处理中"
+    "inputInProgress": "处理中",
+    "awaitingApproval": "等待授权",
+    "copy": "复制消息",
+    "copied": "已复制",
+    "working": "工作中",
+    "workingFor": "已工作 {duration}",
+    "worked": "已完成",
+    "workedFor": "工作了 {duration}",
+    "summary": {
+      "execute": "运行了 {n} 条命令",
+      "edit": "编辑了 {n} 个文件",
+      "read": "读取了 {n} 个文件",
+      "search": "进行了 {n} 次搜索",
+      "other": "使用了 {n} 个工具"
+    },
+    "sessionActions": "会话操作"
   }
 }

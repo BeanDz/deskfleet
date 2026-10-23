@@ -45,7 +45,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     button(label, scope())!.click()
   }
   const conversation = () => document.querySelector<HTMLOListElement>('[aria-label="Conversation"]')
-  const backlog = () => document.querySelector<HTMLElement>('[aria-label="Candidate backlog"]')
+  const backlog = () => document.querySelector<HTMLElement>('[aria-label="Queued"]')
   const permissions = () => document.querySelector<HTMLElement>('[aria-label="Permissions"]')
   const prompt = () => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')
   async function send(text: string, label: string): Promise<void> {
@@ -61,14 +61,18 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     link()!.click()
     await until(() => location.hash === `#/sessions/${id}` && !!conversation(), "Session navigation")
   }
-  function verifyConversation(): void {
+  async function verifyConversation(): Promise<void> {
+    // Finished turns fold their work; expand every turn to inspect the full persisted journal.
+    const folded = () => conversation()?.querySelectorAll<HTMLButtonElement>('[data-turn-work][aria-expanded="false"]') ?? []
+    for (const toggle of folded()) toggle.click()
+    await until(() => !folded().length, "Expanded turn work")
     const text = conversation()?.innerText ?? ""
     for (const marker of ["Smoke first prompt", "stream one 中文", "stream two", "Smoke selected steer", "steer received", "permission accepted", "Smoke queued candidate", "queued reply"]) {
       require(text.split(marker).length === 2, `Expected exactly one ${marker} in persisted conversation: ${text}`)
     }
     require(!backlog(), "All submitted inputs should have left the backlog")
-    require(permissions()?.innerText.includes("Allow smoke edit"), "Resolved permission choice was not retained")
-    require(!button("Allow smoke edit", permissions()!), "Resolved permission must not be actionable")
+    require(!!conversation()?.querySelector("[data-permission-id]")?.textContent?.includes("Allow smoke edit"), "Resolved permission choice was not retained")
+    require(!permissions(), "Resolved permission must not be actionable")
   }
 
   await until(() => !!button("Add workspace") && button("Add workspace")!.getAttribute("aria-disabled") !== "true", "Daemon catalog connection")
@@ -79,7 +83,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     require((await api.catalog.list()).workspaces.length === 0, "Smoke catalog must start empty")
     const workspace = await api.catalog.createWorkspace("Agent smoke workspace", [{ path: context.repository }])
     workspaceId = workspace.id
-    await until(() => [...document.querySelectorAll(".ui-chip")].some(element => element.textContent?.includes(workspace.name)), "New Session workspace target")
+    await until(() => [...document.querySelectorAll("[data-composer-context]")].some(element => element.textContent?.includes(workspace.name)), "New Session workspace target")
     require(location.hash === "#/", "Initial route must be New Session")
     await send("Smoke first prompt", "Send")
     await until(() => /^#\/sessions\/[0-9]+$/u.test(location.hash), "Created Session route")
@@ -116,9 +120,9 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     require(!button("Cancel turn"), "Restart must not silently re-run a completed prompt")
   }
   await until(() => ![...document.querySelectorAll('[role="status"]')].some(element => element.textContent?.includes("Restoring conversation")), "History replay completed")
-  verifyConversation()
+  await verifyConversation()
   require(sessionId && workspaceId && worktreeId, "Session resource identities were missing")
-  const permissionId = permissions()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id")!
+  const permissionId = conversation()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id")!
   return { sessionId, workspaceId, worktreeId, permissionId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }
 }
 

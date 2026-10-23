@@ -2,12 +2,14 @@ import type { AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn 
 
 type Content = AgentInput["content"]
 export type ConversationTool = AgentPermission["request"]["toolCall"]
+type MessageEntry = { id: string; kind: "message"; role: "assistant" | "thought"; content: Content; turnId?: string }
+type ToolEntry = { id: string; kind: "tool"; tool: ConversationTool; permission?: AgentPermission; turnId?: string }
+type PlanEntry = { id: string; kind: "plan"; entries: { content: string; status: string }[]; turnId?: string }
+export type ConversationStep = MessageEntry | ToolEntry | PlanEntry
 export type ConversationEntry =
   | { id: string; kind: "input"; input: AgentInput }
-  | { id: string; kind: "message"; role: "assistant" | "thought"; content: Content; turnId?: string }
-  | { id: string; kind: "tool"; tool: ConversationTool; turnId?: string }
+  | ConversationStep
   | { id: string; kind: "turn"; turn: AgentTurn }
-  | { id: string; kind: "plan"; entries: { content: string; status: string }[]; turnId?: string }
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)
 export function readableValue(value: unknown): string {
@@ -20,9 +22,10 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
   const entries: ConversationEntry[] = []
   const inputs = new Map(snapshot.inputs.map(input => [input.id, input]))
   const seenInputs = new Set<string>()
-  const messages = new Map<string, Extract<ConversationEntry, { kind: "message" }>>()
-  const tools = new Map<string, Extract<ConversationEntry, { kind: "tool" }>>()
-  const plans = new Map<string, Extract<ConversationEntry, { kind: "plan" }>>()
+  const permissions = new Map(snapshot.permissions.map(permission => [permission.id, permission]))
+  const messages = new Map<string, MessageEntry>()
+  const tools = new Map<string, ToolEntry>()
+  const plans = new Map<string, PlanEntry>()
   for (const event of events) {
     if (event.kind === "input") {
       const input = event.payload as AgentInput
@@ -35,6 +38,18 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
     if (event.kind === "turn") {
       const turn = event.payload as AgentTurn
       if (["completed", "cancelled", "interrupted", "failed"].includes(turn.state)) entries.push({ id: `turn-${turn.id}`, kind: "turn", turn })
+      continue
+    }
+    if (event.kind === "permission") {
+      const permission = permissions.get((event.payload as AgentPermission).id) ?? event.payload as AgentPermission
+      const key = `${permission.runGeneration}:${permission.request.toolCall.toolCallId}`
+      let entry = tools.get(key)
+      if (!entry) {
+        entry = { id: `tool-${key}`, kind: "tool", tool: { ...permission.request.toolCall }, turnId: permission.turnId ?? event.turnId }
+        entries.push(entry)
+        tools.set(key, entry)
+      }
+      entry.permission = permission
       continue
     }
     if (event.kind !== "acp" || !record(event.payload) || !record(event.payload.update)) continue
@@ -76,4 +91,75 @@ export function projectConversation(events: AgentEvent[], snapshot: AgentSnapsho
     }
   }
   return entries
+}
+
+/** Agent output between two user messages; a steered turn spans several responses. */
+export interface ConversationResponse {
+  id: string
+  kind: "response"
+  turnId?: string
+  turn?: AgentTurn
+  steps: ConversationStep[]
+  /** Bounds of this response within its turn; absent while unknown or still running. */
+  startedAt?: string
+  endedAt?: string
+  /** Whether the turn is still producing this response. */
+  live: boolean
+  /** Whether this response ends its turn and therefore carries the turn outcome. */
+  last: boolean
+}
+export type TranscriptEntry = Extract<ConversationEntry, { kind: "input" }> | ConversationResponse
+
+const liveTurnStates: AgentTurn["state"][] = ["starting", "running", "cancelling"]
+
+/** Groups projected entries into user messages and the agent responses that follow them. */
+export function groupTranscript(entries: ConversationEntry[], snapshot: AgentSnapshot): TranscriptEntry[] {
+  const turns = new Map(snapshot.turns.map(turn => [turn.id, turn]))
+  const transcript: TranscriptEntry[] = []
+  const turnOf = (id: string | undefined, fallback?: AgentTurn) => id ? turns.get(id) ?? fallback : fallback
+  for (const entry of entries) {
+    if (entry.kind === "input") { transcript.push(entry); continue }
+    const turnId = entry.kind === "turn" ? entry.turn.id : entry.turnId
+    const previous = transcript.at(-1)
+    let response = previous?.kind === "response" && previous.turnId === turnId ? previous : undefined
+    if (!response) {
+      response = { id: `response-${entry.id}`, kind: "response", turnId, turn: turnOf(turnId, entry.kind === "turn" ? entry.turn : undefined), steps: [], live: false, last: false }
+      transcript.push(response)
+    }
+    if (entry.kind !== "turn") response.steps.push(entry)
+  }
+  const lastResponse = new Map<string, ConversationResponse>()
+  transcript.forEach((entry, index) => {
+    if (entry.kind !== "response" || !entry.turn) return
+    const before = transcript[index - 1]
+    const after = transcript[index + 1]
+    const sameTurn = (input: TranscriptEntry | undefined) => input?.kind === "input" && input.input.turnId === entry.turn!.id ? input.input : undefined
+    entry.startedAt = sameTurn(before)?.actualDelivery === "steer" ? sameTurn(before)!.deliveredAt : entry.turn.startedAt
+    entry.endedAt = sameTurn(after)?.deliveredAt ?? entry.turn.endedAt
+    lastResponse.set(entry.turn.id, entry)
+  })
+  for (const entry of transcript) {
+    if (entry.kind !== "response") continue
+    entry.last = !entry.turn || lastResponse.get(entry.turn.id) === entry
+    entry.live = entry.last && !!entry.turn && liveTurnStates.includes(entry.turn.state)
+    if (entry.live) entry.endedAt = undefined
+  }
+  return transcript
+}
+
+export type ToolSummaryKind = "execute" | "edit" | "read" | "search" | "other"
+
+/** Counts tool activity for a response summary; edits count distinct files when paths are known. */
+export function summarizeTools(steps: ConversationStep[]): { kind: ToolSummaryKind; count: number }[] {
+  const groups = new Map<ToolSummaryKind, Set<string>>()
+  for (const step of steps) {
+    if (step.kind !== "tool") continue
+    const kind = step.tool.kind
+    const group: ToolSummaryKind = kind === "execute" || kind === "read" || kind === "search" ? kind : kind === "edit" || kind === "delete" || kind === "move" ? "edit" : "other"
+    const paths = group === "edit" ? [...step.tool.locations?.map(location => location.path) ?? [], ...step.tool.content?.flatMap(block => block.type === "diff" ? [block.path] : []) ?? []] : []
+    const keys = groups.get(group) ?? new Set()
+    for (const key of paths.length ? paths : [step.id]) keys.add(key)
+    groups.set(group, keys)
+  }
+  return (["execute", "edit", "read", "search", "other"] as const).flatMap(kind => groups.has(kind) ? [{ kind, count: groups.get(kind)!.size }] : [])
 }

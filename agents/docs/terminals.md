@@ -27,7 +27,8 @@ or close them. Local Workspace directory configuration is connected; remote mach
 enrollment remains unimplemented.
 
 Navigating away detaches the view. Losing a peer, reloading the renderer, or
-quitting Electron closes the transport without terminating the shell. On startup
+closing the window closes the transport without terminating the shell. Quitting
+the app stops the daemon it hosts, which interrupts the shell. On startup
 the client lists daemon sessions; attaching an existing ID does not spawn a new
 process. One client can control a terminal at a time. Each shell has its own tab;
 switching tabs detaches the previous view without stopping that shell. Closing a

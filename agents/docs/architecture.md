@@ -6,18 +6,18 @@ and access terminals or desktops on the machine doing the work.
 
 This document describes the planned system. The current implementation contains
 the Rust resource model, a SeaORM catalog with SQLite persistence, an Actix Web
-liveness endpoint, and an independent TypeScript daemon calling a napi-rs addon.
+liveness endpoint, and a TypeScript daemon library calling a napi-rs addon.
 The desktop client manages workspace directory configuration and persistent
 Codex Sessions with conversation history, a shared backlog, steering, and
-approvals. The daemon runs from source or a SEA executable, exposes native
+approvals. The daemon runs from source, as a SEA executable, or inside the desktop app; it exposes native
 information and a local health endpoint, and runs Codex CLI sessions through ACP.
 Agent clients use an ACP facade over DataChannel;
 the daemon owns execution, audit, and SQLite history. Native WebRTC peers,
 DataChannels, and on-demand capture/encoding are available through the daemon's
 native API. The Electron client uses authenticated local IPC for desktop signaling
 and Chromium WebRTC
-for decoding and playback in its sandboxed Vue renderer. It stays in the tray
-independently of the daemon.
+for decoding and playback in its sandboxed Vue renderer. The app hosts the
+daemon in its main process and stays in the tray after its windows close.
 
 ## Components
 
@@ -193,36 +193,39 @@ Daemon terminal transcripts retain their existing storage.
 
 ## Daemon and session lifecycle
 
-The daemon runs independently of Electron, normally as the OS user whose files,
-credentials, and tools the agents use. Closing the app or losing a connection
-must leave ongoing work running. Local clients connect over authenticated IPC,
-such as a Unix-domain socket or Windows named pipe.
+The daemon runs as the OS user whose files, credentials, and tools the agents
+use. Closing a window or losing a connection must leave ongoing work running.
+Local clients connect over authenticated IPC, such as a Unix-domain socket or
+Windows named pipe.
 
 Desktop Settings has a persistent **Run local Agent** preference, enabled by
-default. The client consumes `@deskfleet/daemon` as a library bundled into the
-application. It starts a detached instance of its own Electron executable in a
-daemon-only host mode, using the bundled native addon and runtime. This process
-has no UI or client single-instance lock and has a separate Chromium profile.
-The standalone Node.js SEA remains the headless distribution of the same daemon.
+default. The app bundles `@deskfleet/daemon` and starts it in its own main
+process, with the bundled native addon and runtime. The daemon's lifetime is the
+app's: it keeps running while the app sits in the tray with no windows, and the
+app waits for its cleanup before exiting. The app never spawns a separate daemon
+process. The standalone Node.js SEA is the headless distribution of the same
+daemon and runs independently of any desktop app.
 
 After acquiring discovery and initializing local IPC, the daemon requests the
 OS permissions needed by its implemented desktop capture capabilities. On macOS
-this is screen/system-audio recording consent, requested in the capturing daemon
-process before a remote client uses it. Permission prompts and denial must not
+this is screen/system-audio recording consent, requested in the process hosting
+the daemon before a remote client uses it. Permission prompts and denial must not
 block headless operations. Settings displays permission status separately from
 daemon availability; capture and encoding still start only on explicit use.
 
-Startup reuses an authenticated daemon already owning the discovery directory.
-Explicitly disabling the preference sends authenticated shutdown and waits for
-the discovery lease to be released after cleanup. It ends live terminal processes
-but retains catalog and terminal history. Client exit only detaches, leaving the
-daemon alive. Disabling auto-start does not kill an independently started daemon
-when a client next launches. Startup/shutdown errors and retries appear in Settings.
+Startup reuses an authenticated daemon already owning the discovery directory,
+such as a standalone SEA, instead of hosting another. Explicitly disabling the
+preference sends authenticated shutdown and waits for the discovery lease to be
+released after cleanup. It ends live terminal processes but retains catalog and
+terminal history. Quitting the app closes the daemon it hosts in the same way;
+a reused standalone daemon is only disconnected. Disabling auto-start does not
+kill a separately started daemon when the app next launches. Startup/shutdown
+errors and retries appear in Settings.
 
-The desktop client stays resident in the system tray (the macOS menu bar or the
-Windows notification area). Closing its window or using an ordinary quit command
-hides it. The tray menu, OS session end, or a termination signal exits the client
-process.
+The desktop app stays resident in the system tray (the macOS menu bar or the
+Windows notification area), so its daemon and notifications stay available.
+Closing its window or using an ordinary quit command hides it. The tray menu,
+OS session end, or a termination signal quits the app and its hosted daemon.
 
 The daemon is the ACP client and owns local agent processes or adapter
 connections. Each AgentSession belongs to a Workspace and captures its Worktree execution

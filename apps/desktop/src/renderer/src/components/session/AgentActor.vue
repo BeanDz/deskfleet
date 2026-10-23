@@ -6,5 +6,5 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <span :title="`${actor.sourceMachine.originId}/${actor.sourceMachine.id}`">{{ actor.userId ?? t(actor.kind === 'system' ? 'agent.system' : 'agent.localUser') }} · {{ t('agent.sourceMachine', { id: actor.sourceMachine.id }) }}</span>
+  <span :title="t('agent.sourceMachine', { id: actor.sourceMachine.id })">{{ actor.userId ?? t(actor.kind === 'system' ? 'agent.system' : 'agent.localUser') }}</span>
 </template>

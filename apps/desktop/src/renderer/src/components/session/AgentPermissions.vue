@@ -1,23 +1,24 @@
 <script setup lang="ts">
+import { ShieldAlert } from "@lucide/vue"
+import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentPermission } from "../../../../../../daemon/src/agent-protocol.ts"
-import AgentActor from "./AgentActor.vue"
 import AgentToolCall from "./AgentToolCall.vue"
-defineProps<{ permissions: AgentPermission[]; disabled: boolean }>()
+const props = defineProps<{ permissions: AgentPermission[]; disabled: boolean }>()
 const emit = defineEmits<{ respond: [id: string, optionId: string] }>()
 const { t } = useI18n()
-const selectedLabel = (permission: AgentPermission) => permission.request.options.find(option => option.optionId === permission.optionId)?.name ?? permission.optionId
+// Answered requests are recorded on their tool call in the conversation.
+const pending = computed(() => props.permissions.filter(permission => permission.state === "pending"))
 </script>
 
 <template>
-  <section v-if="permissions.length" class="flex flex-col gap-3" :aria-label="t('agent.permissions')">
-    <div v-for="permission in permissions" :key="permission.id" class="rounded-xl border border-ui-border bg-ui-surface p-4" :data-permission-id="permission.id">
-      <h2 class="m-0 mb-2 text-sm font-semibold">{{ t(permission.state === 'pending' ? 'agent.permissionRequired' : permission.state === 'resolved' ? 'agent.permissionResolved' : 'agent.permissionCancelled') }}</h2>
-      <AgentToolCall :tool="permission.request.toolCall" />
-      <div v-if="permission.state === 'pending'" class="mt-3 flex flex-wrap gap-2">
-        <button v-for="option in permission.request.options" :key="option.optionId" class="catalog-button" :disabled="disabled" @click="emit('respond', permission.id, option.optionId)">{{ option.name }}</button>
+  <section v-if="pending.length" class="flex flex-col gap-2" :aria-label="t('agent.permissions')">
+    <div v-for="permission in pending" :key="permission.id" class="rounded-xl border border-ui-border bg-ui-surface p-3 shadow-ui-card" :data-permission-id="permission.id">
+      <p class="m-0 mb-1 flex items-center gap-1.5 text-[13px] font-medium"><ShieldAlert :size="15" :stroke-width="1.75" class="text-ui-warning" aria-hidden="true" />{{ t('agent.permissionRequired') }}</p>
+      <AgentToolCall :tool="permission.request.toolCall" live class="pl-2" />
+      <div class="mt-2 flex flex-wrap justify-end gap-2">
+        <button v-for="option in permission.request.options" :key="option.optionId" type="button" class="inline-flex h-7 cursor-pointer items-center rounded-md px-3 text-[13px] disabled:cursor-default disabled:opacity-50" :class="option.kind.startsWith('allow') ? 'bg-ui-action text-ui-action-text' : 'border border-ui-border hover:bg-ui-hover'" :disabled="disabled" @click="emit('respond', permission.id, option.optionId)">{{ option.name }}</button>
       </div>
-      <p v-else-if="permission.state === 'resolved'" class="m-0 mt-2 text-xs text-ui-text-muted">{{ selectedLabel(permission) }}<template v-if="permission.actor"> · <AgentActor :actor="permission.actor" /></template></p>
     </div>
   </section>
 </template>

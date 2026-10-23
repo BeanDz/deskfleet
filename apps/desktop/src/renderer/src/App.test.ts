@@ -21,7 +21,7 @@ async function mountApp(path = "/") {
 }
 function link(wrapper: VueWrapper, text: string) { return wrapper.findAll("a").find(a => a.text() === text)! }
 function button(wrapper: VueWrapper, text: string) { return wrapper.findAll("button").find(entry => entry.text() === text)! }
-const chips = (wrapper: VueWrapper) => wrapper.findAll(".ui-chip").map(chip => chip.text())
+const chips = (wrapper: VueWrapper) => wrapper.findAll("[data-composer-context]").map(chip => chip.text())
 function panel(wrapper: VueWrapper) { return wrapper.get('aside[aria-label="Details"]') }
 
 beforeEach(() => {

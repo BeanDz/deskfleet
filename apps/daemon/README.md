@@ -1,7 +1,7 @@
 # deskfleet daemon
 
-`@deskfleet/daemon` is a TypeScript library with standalone and desktop-bundled
-process hosts. It runs independently of the desktop client's lifetime, reports
+`@deskfleet/daemon` is a TypeScript library. It runs as a standalone SEA process
+on headless machines or inside the desktop app's main process. It reports
 native platform information, serves a loopback health
 endpoint, owns a persistent workspace/worktree catalog, and runs Codex CLI
 sessions over ACP.
@@ -66,9 +66,9 @@ without loading native daemon implementation modules. Authenticated `shutdown`
 acknowledges the request, stops new work, and closes resources before releasing
 discovery. Unauthenticated clients cannot request shutdown.
 
-Desktop Settings starts this library in a detached, windowless Electron process
-by default. Its runtime and native addon ship with the desktop application; the
-standalone SEA remains available for headless installations. Both hosts share
+Desktop Settings starts this library in the app's main process by default, and
+quitting the app stops it. Its runtime and native addon ship with the desktop
+application; the standalone SEA runs independently for headless installations. Both hosts share
 the same discovery, catalog, and terminal storage. See the
 [desktop guide](../desktop/README.md#local-agent) for the toggle and lifecycle.
 

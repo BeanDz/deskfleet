@@ -252,6 +252,10 @@ committed sequence. Entry IDs derive from the first event sequence, so replay
 never depends on render timing. Apply tool patches by run/tool-call ID and their
 field-presence semantics. Display submitted user content once by input ID and
 ignore provider user-message echoes.
+The renderer groups the output after each user message into a response. A
+finished turn folds its tool calls, thoughts, and interim messages behind its
+duration and leaves its final message visible. Answered permissions are shown
+on their tool call; only pending ones offer choices.
 
 The shared renderer store survives route changes. It separates connection status
 from Session/run/turn state and retains drafts during navigation. Response loss

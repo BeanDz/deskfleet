@@ -1,7 +1,8 @@
 # deskfleet desktop
 
-`@deskfleet/desktop` is the Electron client for the machine daemon. Quitting the
-client leaves the daemon and its agent sessions running. The renderer uses Vue
+`@deskfleet/desktop` is the Electron client for the machine daemon, which it hosts
+in its main process. Closing the window leaves the app in the tray with the daemon
+and its agent sessions running; quitting the app stops them. The renderer uses Vue
 with vue-router, Pinia, VueUse, vue-i18n, UnoCSS, Lucide icons, and xterm.js.
 
 ## Development
@@ -17,11 +18,9 @@ hot reload and rebuilds the main and preload bundles in watch mode. It restarts
 Electron when either bundle changes. Quitting from the tray menu or pressing
 Ctrl-C stops the watchers.
 
-The local Agent stays running across client rebuilds and dev restarts. After
-changing daemon code or its IPC contracts, restart it from **Settings →
-Preferences → This computer → Run local Agent** by switching it off and on.
-This stops live terminals and agent runs; saved catalog, conversation, and terminal history remain. Restarting
-only the dev client continues to use the already-running daemon's code.
+Each dev restart quits Electron, which stops the hosted local Agent and starts it
+again with the rebuilt daemon code. This stops live terminals and agent runs;
+saved catalog, conversation, and terminal history remain.
 
 `mise run desktop:build` writes the production bundles to `out/`. Run them with
 `mise exec -- pnpm --filter @deskfleet/desktop exec electron .`. Electron
@@ -142,7 +141,7 @@ that decision and removes the choices.
 backlog, and Worktree. **Resume agent** continues the saved provider session when
 supported. **Delete session** removes its conversation and managed checkouts;
 command audit remains in the daemon database. Navigating away, disconnecting, or
-quitting Electron leaves the agent running. Restarting the daemon retains history
+closing the window leaves the agent running; quitting the app stops it. Restarting the daemon retains history
 and marks interrupted runs for explicit resumption.
 
 `useAgentSessionsStore` subscribes to snapshots and replays the committed event
@@ -158,8 +157,8 @@ submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
 container on resize and disposes of it on unmount. The terminal view remounts it
 for each terminal session. The real local machine lists daemon-owned sessions in
 tabs and supports dialing new or existing shells, live input/output, resize,
-reattachment, and explicit hangup. Switching tabs, leaving the view or quitting
-Electron leaves shells running. Closing a tab hangs up only its shell and removes
+reattachment, and explicit hangup. Switching tabs, leaving the view or closing
+the window leaves shells running. Closing a tab hangs up only its shell and removes
 its daemon history. Daemon shutdown terminates processes while preserving their
 history; after restart they appear interrupted and read-only. xterm.js uses an injected
 stylesheet, which the renderer CSP's `style-src 'unsafe-inline'` permits. It
@@ -214,11 +213,10 @@ starting another client.
 
 **Settings → Preferences → Run local Agent** is enabled by default. The main process stores
 `localAgentEnabled` in `settings.json` under Electron's `userData` directory.
-Enabling it starts the bundled daemon library in a detached Electron background
-process, or reuses the authenticated daemon already serving the same discovery
-directory. There is no separate Node.js or daemon installation to configure.
-The background process has no window, tray icon, or client single-instance lock.
-Its Chromium data is separate from the client's profile.
+Enabling it starts the bundled daemon library in the app's main process, or
+reuses the authenticated daemon already serving the same discovery directory,
+such as a standalone SEA. There is no separate Node.js or daemon installation
+to configure, and the app starts no separate daemon process.
 
 On macOS, a newly started Agent immediately requests screen/system-audio recording
 access. Settings shows a permission notice while access is pending, denied, or
@@ -234,11 +232,11 @@ history, and terminal history remain on disk. Turning it back on reconnects the 
 start or stop appears in Settings with a retry action. Disabled startup does not
 terminate a daemon started separately; Settings reports it as running separately.
 
-Closing or quitting the client only disconnects its IPC connection. The daemon
-keeps running, including across development client reloads. After changing daemon
-code during development, toggle the local Agent off and on to load the new bundle.
-Logs go to `<daemon directory>/daemon.log`; discovery, SQLite data, and terminal
-history retain their usual locations. `DESKFLEET_DAEMON_DIRECTORY` selects an
+Closing the window keeps the app in the tray and the daemon running. Quitting
+the app from the tray, ending the OS session, or sending a termination signal
+shuts the hosted daemon down and waits for its cleanup before exiting; a reused
+standalone daemon is only disconnected. Daemon logs go to the app's output;
+discovery, SQLite data, and terminal history retain their usual locations. `DESKFLEET_DAEMON_DIRECTORY` selects an
 isolated instance for both the client and its bundled daemon.
 
 ## Localization
@@ -300,8 +298,8 @@ mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host plat
 `out/`, including the `@deskfleet/daemon` library. The native addon is copied next
 to the main bundle and unpacked from ASAR for loading; installer builds use the
 release addon. The app has no runtime `node_modules` or external Node dependency.
-The same installed executable hosts the daemon with `--deskfleet-daemon` and
-runs the bundled Codex ACP adapter with `--codex-acp` in Electron's Node mode.
+The app's main process hosts the daemon. The same installed executable runs the
+bundled Codex ACP adapter with `--codex-acp` in Electron's Node mode.
 The `RunAsNode` fuse stays enabled for that adapter process. Packages enable ASAR
 integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
@@ -323,7 +321,7 @@ mise run desktop:smoke-terminal  # real PTY I/O, resize, and reattachment over W
 mise run desktop:smoke-catalog  # built renderer CRUD, SQLite persistence, and directory shell cwd
 mise run desktop:smoke-agent  # conversation, backlog, steering, permissions, and restart recovery
 mise run desktop:smoke-startup  # client, daemon, and bundled adapter entry-point routing
-mise run desktop:smoke-local-agent  # Settings toggle, daemon reuse, and independent process lifetime
+mise run desktop:smoke-local-agent  # Settings toggle, hosted daemon lifetime, and standalone reuse
 ```
 
 The catalog smoke uses an isolated daemon database and Electron profiles. It
@@ -332,10 +330,11 @@ reordering paths, opens a real shell in that directory, and reopens the client t
 verify the saved catalog before deleting it.
 
 The local Agent smoke uses a temporary profile and daemon directory with the real
-built renderer, preload, Settings controller, and bundled daemon host. It verifies
+built renderer, preload, Settings controller, and hosted daemon. It verifies
 default startup, switching off and on, catalog refresh, terminal interruption on
-shutdown, terminal survival after client exit, reuse by another client, and the
-persisted disabled preference on a third launch.
+shutdown, the daemon surviving its window but not the app, a fresh daemon on
+relaunch, the persisted disabled preference, and reuse of a standalone daemon
+that outlives the app.
 
 The Agent Session smoke drives the production renderer through real WebRTC,
 SQLite persistence, and managed Git checkouts with a scripted ACP provider. It
