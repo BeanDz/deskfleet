@@ -1,10 +1,14 @@
 // Client view models for the resource catalog.
 
+import type { AgentSessionContext } from "../../../../../daemon/src/agent-protocol.ts"
+
 export interface AgentSessionSummary {
   id: string
   title?: string
   /** The agent provider's user-facing name. */
   provider?: string
+  /** Absent until the Session's Agent metadata has loaded. */
+  context?: AgentSessionContext
   /** Absent while provisioning or if context creation failed. */
   worktree?: WorktreeSummary
 }

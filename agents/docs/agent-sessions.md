@@ -22,12 +22,16 @@ flowchart LR
     S -.->|Future history synchronization| C[Central server]
 ```
 
-A managed Session belongs to one Workspace and owns its generated Worktree. Its
-captured ordered directories are the execution context; the first supplies `cwd`.
-Later Workspace edits do not retarget existing Sessions. Session creation also
-retains a failed provisioning record when Git setup fails. Stopping a provider
-preserves the Session and its files. Explicit Session deletion removes the
-disposable checkouts before deleting the catalog resource.
+A managed Session belongs to one Workspace and records an immutable `context`.
+A `worktree` Session owns generated checkouts; a `directory` Session uses the
+Workspace's own directories in place. Its captured ordered directories are the
+execution context; the first supplies `cwd`. Later Workspace edits do not
+retarget existing Sessions. Session creation also retains a failed provisioning
+record when Git setup fails or a directory is missing. Stopping a provider
+preserves the Session and its files. Explicit deletion removes a worktree
+Session's disposable checkouts before deleting the catalog resource; a directory
+Session's files are never removed. The new-session composer offers both contexts
+and remembers the last choice on that device.
 
 ## Identity and audit
 
@@ -117,7 +121,7 @@ Creation atomically allocates the catalog Session, provisioning metadata, and
 command binding before filesystem work. Interrupted create retries return a full
 Session snapshot rather than allocating another Session. Deletion marks the
 Session `deleting`, stops admission, closes the provider and pending permissions,
-removes owned checkouts, and removes Session records. Incomplete cleanup retains
+removes any owned checkouts, and removes Session records. Incomplete cleanup retains
 the deleting resource for an explicit retry. Source checkouts are untouched.
 
 The composer accepts text. Provider content, plans, tool patches, and unknown
@@ -173,7 +177,14 @@ Cancellation names a specific `turnId`. An active target becomes `cancelling`;
 provider completion supplies its final state. A completed target is an audited
 no-op. Recheck the active turn after asynchronous work so a late cancellation
 cannot cancel the next turn or its approvals. Withdrawal affects only the named
-input. Stopping a provider retains pending backlog for explicit resume.
+input. Stopping a provider retains pending backlog until the next request.
+
+A new or retried message to a stopped, interrupted, or failed agent resumes it;
+successful startup then drains the backlog in acceptance order. The UI shows no
+stopped or resume state. A provider that cannot resume its saved conversation
+rejects the message instead of queueing it, and the UI explains that a new
+Session is needed. A startup failure is recorded on the run and Session, keeps
+the message queued, and is retried by the next request.
 
 ## Shared permissions
 
@@ -219,7 +230,7 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | --- | --- |
 | `initialize` | Negotiate protocol, facade capabilities, byte limit, and catalog identity |
 | `_deskfleet/session/list` | Read persisted Session summaries |
-| `_deskfleet/session/create` | Idempotently create Workspace Session/Worktree and start Codex; return snapshot |
+| `_deskfleet/session/create` | Idempotently create a worktree or directory Session and start Codex; return snapshot |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
 | `_deskfleet/input/submit` | Persist text with operation ID and backlog/steer intent |
@@ -230,7 +241,7 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | `_deskfleet/permission/respond` | Audit an offered permission decision |
 | `_deskfleet/session/event` | Deliver committed domain and original ACP events |
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
-| `_deskfleet/session/resume`, `/stop`, `/delete` | Explicit provider/resource lifecycle operations |
+| `_deskfleet/session/resume`, `/stop`, `/delete` | Explicit provider/resource lifecycle operations; input submission also resumes |
 
 Original ACP notifications, including provider Session IDs, are carried in journal
 events and projected once by the renderer. The facade advertises only supported
@@ -265,11 +276,11 @@ clears only the matching draft, preserving edits made while sending.
 
 Daemon restart marks lost live runs/turns interrupted, outstanding dispatches
 uncertain, and old permissions cancelled. Pending inputs remain queued until
-explicit resume. SQLite commit and provider dispatch cannot be one transaction;
+the next message resumes the agent. SQLite commit and provider dispatch cannot be one transaction;
 unknown delivery therefore cannot be automatically repeated. Viewer reconnect
 only subscribes and replays: it never starts or resumes a provider.
 
-Explicit resume uses the saved provider Session ID and captured directories with
+Resume uses the saved provider Session ID and captured directories with
 negotiated `session/resume`. Providers without that capability cannot resume.
 Stop can close a connection while startup RPCs await;
 resume waits for old shutdown/recovery, and old-generation callbacks cannot

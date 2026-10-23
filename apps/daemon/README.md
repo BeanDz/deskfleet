@@ -130,7 +130,8 @@ command audit are stored in the same SQLite catalog. Closing a client leaves
 execution running; reopening replays the journal over the `deskfleet-acp`
 DataChannel. The composer can queue a message or steer the current turn, and a
 pending candidate can also be selected for steering. Stop retains the backlog;
-Resume reuses the saved Codex conversation. Explicit deletion removes the owned
+the next message, or an explicit `session/resume`, reuses the saved Codex
+conversation. Explicit deletion removes the owned
 checkouts and history while retaining command audit.
 
 Local IPC adds `agentOffer` for SDP/ICE signaling only. Conversation operations

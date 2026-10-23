@@ -12,6 +12,8 @@ product website and user manual.
   requires ordered directory paths, with the first as default and no directory
   aliases. Its main Worktree uses those actual directories; other Worktrees are
   created and destroyed with their owning Session, never maintained separately.
+  A new Session either generates its own Git worktree or works directly in the
+  Workspace's directories; deleting the latter never touches those files.
   A TerminalSession can belong to a Machine, Workspace, or Worktree. Its working
   directory is a separate choice.
 - Cross-machine coordination belongs to agent-facing MCP tools. Do not introduce

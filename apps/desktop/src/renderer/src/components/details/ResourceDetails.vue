@@ -46,7 +46,7 @@ const rows = computed<DetailsRow[]>(() => {
         machine,
         ...(resource.workspace ? [{ label: t("panel.workspace"), value: resource.workspace.name }] : []),
         ...(resource.session ? [{ label: t("worktree.session"), value: sessionLabel(resource.session) }] : []),
-        ...(resource.worktree ? [{ label: t("panel.worktree"), value: worktreeLabel() }] : []),
+        ...(resource.worktree ? [{ label: t("panel.worktree"), value: worktreeLabel(resource.session) }] : []),
         { label: t("panel.cwd"), value: resource.terminal.cwd, code: true },
       ]
     }
@@ -68,7 +68,7 @@ const title = computed(() => {
     case "workspace":
       return resource.workspace.name
     case "worktree":
-      return worktreeLabel()
+      return worktreeLabel(resource.session)
     case "session":
       return sessionLabel(resource.session)
     case "terminal":

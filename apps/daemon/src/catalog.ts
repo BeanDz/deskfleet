@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises"
 import { hostname } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { openCatalog, type NativeCatalog } from "@deskfleet/native"
+import type { AgentSessionContext } from "./agent-protocol.ts"
 import type { CatalogDirectory, CatalogEvent, CatalogMethods, CatalogRequest } from "./catalog-protocol.ts"
 import { ManagedSessionWorktrees } from "./session-worktrees.ts"
 
@@ -30,9 +31,10 @@ export class DaemonCatalog {
     return this.#catalog
   }
 
-  async provisionSession(id: string, workspaceId: string): Promise<void> {
+  async provisionSession(id: string, workspaceId: string, context: AgentSessionContext): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")
-    await this.#sessions.create(workspaceId, { id, workspaceId })
+    if (context === "directory") await this.#sessions.useDirectories({ id, workspaceId })
+    else await this.#sessions.create(workspaceId, { id, workspaceId })
     this.changed()
   }
 

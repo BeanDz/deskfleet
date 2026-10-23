@@ -63,14 +63,24 @@
   "session": {
     "notFound": "该会话不存在。",
     "label": "会话 {id}",
-    "worktree": "工作树"
+    "worktree": "工作树",
+    "directory": "工作目录"
   },
   "composer": {
     "label": "提示词",
     "placeholder": "描述要交给智能体的任务",
     "provider": "智能体提供方",
     "send": "发送",
-    "context": "会话上下文"
+    "context": "会话上下文",
+    "contextChoice": "会话上下文：{context}",
+    "contextOption": {
+      "worktree": "新建工作树",
+      "directory": "工作目录"
+    },
+    "contextHint": {
+      "worktree": "从每个目录已提交的 HEAD 创建隔离的 Git 检出",
+      "directory": "直接在工作区目录中工作，包括未提交的更改"
+    }
   },
   "terminal": {
     "new": "新建终端",
@@ -229,7 +239,6 @@
     "addToBacklog": "加入积压列表",
     "cancelTurn": "取消当前轮次",
     "stop": "停止 Agent",
-    "resume": "恢复 Agent",
     "delete": "删除会话",
     "stopQuestion": "停止此 Agent？对话和工作树会保留。",
     "deleteQuestion": "删除此会话、对话记录及其托管工作树？",
@@ -253,11 +262,7 @@
     },
     "runState": {
       "starting": "正在启动 Agent…",
-      "running": "Agent 运行中",
-      "stopping": "正在停止 Agent…",
-      "stopped": "Agent 已停止",
-      "interrupted": "Agent 已中断",
-      "failed": "Agent 运行失败"
+      "stopping": "正在停止 Agent…"
     },
     "lifecycle": {
       "provisioning": "正在准备工作树…",
@@ -272,7 +277,6 @@
       "failed": "本轮执行失败"
     },
     "creating": "正在创建会话…",
-    "stoppedHint": "消息会在 Agent 恢复后发送。",
     "resumeUnavailable": "此提供方无法恢复该会话。请新建会话以继续工作。",
     "inputInProgress": "处理中",
     "awaitingApproval": "等待授权",
@@ -289,6 +293,7 @@
       "search": "进行了 {n} 次搜索",
       "other": "使用了 {n} 个工具"
     },
-    "sessionActions": "会话操作"
+    "sessionActions": "会话操作",
+    "deleteDirectoryQuestion": "删除此会话及其对话记录？工作目录及其中的文件将保持不变。"
   }
 }

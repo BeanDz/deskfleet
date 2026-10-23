@@ -111,6 +111,24 @@ export class ManagedSessionWorktrees {
     }
   }
 
+  /**
+   * Records the Workspace's current directories as the Session's execution
+   * context without generating checkouts; the agent works in those directories.
+   */
+  async useDirectories(allocated: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
+    const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === allocated.workspaceId)
+    const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
+    if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
+    for (const { path } of main.directories) {
+      let info
+      try { info = await stat(path) }
+      catch (error) { throw new Error(`Cannot access directory: ${path}`, { cause: error }) }
+      if (!info.isDirectory()) throw new Error(`Not a directory: ${path}`)
+    }
+    const worktree = await this.#catalog.attachSessionWorktree(allocated.id, main.directories.map(({ path }) => ({ path })))
+    return { ...allocated, worktree }
+  }
+
   destroy(sessionId: string): Promise<void> {
     const pending = this.#destroying.get(sessionId)
     if (pending) return pending
@@ -125,7 +143,8 @@ export class ManagedSessionWorktrees {
     try { manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")) as Manifest }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-      // A process may stop after allocating a session but before creating files.
+      // A Session using Workspace directories in place owns no files. A process
+      // may also stop after allocating a session but before creating files.
       await this.#catalog.deleteWorkspaceSession(sessionId)
       return
     }

@@ -27,7 +27,7 @@ const scope = computed(() => localWorkspace.value
   ? [fleet.localDesktopTarget.name]
   : [location.value?.machine.name, location.value?.workspace?.name,
       location.value?.session ? sessionLabel(location.value.session) : undefined,
-      location.value?.worktree ? worktreeLabel() : undefined]
+      location.value?.worktree ? worktreeLabel(location.value.session) : undefined]
     .filter((name): name is string => name !== undefined),
 )
 const banner = computed(() => `\x1b[2m${t("terminal.unavailable")}\x1b[0m\n`)

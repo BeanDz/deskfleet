@@ -90,3 +90,18 @@ test("a finished turn folds its work behind a duration and keeps the final answe
   expect(view.text()).toContain("Looking around")
   expect(view.text()).toContain("pnpm test")
 })
+
+test("only a new Session offers its context, and an existing directory Session is labelled as such", async () => {
+  const machine = { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], terminals: [] }
+  const workspace = { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] }
+  const fresh = mount(SessionComposer, { props: { location: { machine, workspace }, showTarget: true, context: "worktree" }, global: { plugins: [i18n] } }); wrappers.push(fresh)
+  await button(fresh, "Session context: New worktree").trigger("click")
+  const options = fresh.findAll('[role="menuitemradio"]')
+  expect(options.map(option => option.attributes("aria-checked"))).toEqual(["true", "false"])
+  await options[1]!.trigger("click")
+  expect(fresh.emitted("update:context")).toEqual([["directory"]])
+  const worktree = { id: "31", directories: [{ path: "/code/web" }], terminals: [] }
+  const existing = mount(SessionComposer, { props: { location: { machine, workspace, worktree, session: { id: "30", context: "directory" } } }, global: { plugins: [i18n], stubs: { RouterLink: { template: "<a><slot /></a>" } } } }); wrappers.push(existing)
+  expect(existing.find('[aria-haspopup="menu"]').exists()).toBe(false)
+  expect(existing.text()).toContain("Working directory")
+})

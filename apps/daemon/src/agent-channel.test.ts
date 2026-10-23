@@ -8,7 +8,7 @@ type Message = { id?: string | number | null; method?: string; params?: any; res
 const actor: AgentActor = { kind: "local_token", sourceMachine: { originId: "origin", id: "machine" }, deviceId: "first" }
 const now = "2026-10-23T00:00:00Z"
 const snapshot: AgentSnapshot = {
-  session: { id: "1", workspaceId: "2", title: "Test", provider: "codex", lifecycle: "ready", lastEventSeq: "0", createdAt: now, updatedAt: now },
+  session: { id: "1", workspaceId: "2", title: "Test", provider: "codex", context: "worktree", lifecycle: "ready", lastEventSeq: "0", createdAt: now, updatedAt: now },
   runs: [], inputs: [], turns: [], permissions: [],
 }
 function deferred<T>() {

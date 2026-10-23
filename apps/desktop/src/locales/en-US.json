@@ -63,14 +63,24 @@
   "session": {
     "notFound": "This session does not exist.",
     "label": "Session {id}",
-    "worktree": "Worktree"
+    "worktree": "Worktree",
+    "directory": "Working directory"
   },
   "composer": {
     "label": "Prompt",
     "placeholder": "Describe a task for the agent",
     "provider": "Agent provider",
     "send": "Send",
-    "context": "Session context"
+    "context": "Session context",
+    "contextChoice": "Session context: {context}",
+    "contextOption": {
+      "worktree": "New worktree",
+      "directory": "Working directory"
+    },
+    "contextHint": {
+      "worktree": "Isolated Git checkouts from each directory's committed HEAD",
+      "directory": "Work in the Workspace's directories, including uncommitted changes"
+    }
   },
   "terminal": {
     "new": "New terminal",
@@ -229,7 +239,6 @@
     "addToBacklog": "Add to backlog",
     "cancelTurn": "Cancel turn",
     "stop": "Stop agent",
-    "resume": "Resume agent",
     "delete": "Delete session",
     "stopQuestion": "Stop this agent? Its conversation and worktree will remain.",
     "deleteQuestion": "Delete this session, its conversation, and its managed worktree?",
@@ -253,11 +262,7 @@
     },
     "runState": {
       "starting": "Starting agent…",
-      "running": "Agent running",
-      "stopping": "Stopping agent…",
-      "stopped": "Agent stopped",
-      "interrupted": "Agent interrupted",
-      "failed": "Agent failed"
+      "stopping": "Stopping agent…"
     },
     "lifecycle": {
       "provisioning": "Preparing worktree…",
@@ -272,7 +277,6 @@
       "failed": "Turn failed"
     },
     "creating": "Creating session…",
-    "stoppedHint": "Messages wait until the agent resumes.",
     "resumeUnavailable": "This provider cannot resume this session. Start a new session to continue.",
     "inputInProgress": "In progress",
     "awaitingApproval": "Awaiting approval",
@@ -289,6 +293,7 @@
       "search": "Ran {n} search | Ran {n} searches",
       "other": "Used {n} tool | Used {n} tools"
     },
-    "sessionActions": "Session actions"
+    "sessionActions": "Session actions",
+    "deleteDirectoryQuestion": "Delete this session and its conversation? Its working directory and files are left unchanged."
   }
 }

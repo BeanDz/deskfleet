@@ -1,6 +1,6 @@
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
-import type { AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
+import type { AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
 
 export interface AgentSessionView {
@@ -265,9 +265,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
 
-  async function create(workspaceId: string, title: string): Promise<AgentSnapshot> {
+  async function create(workspaceId: string, title: string, context: AgentSessionContext): Promise<AgentSnapshot> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
-    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider: "codex" })
+    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider: "codex", context })
     snapshotReceived(snapshot)
     return snapshot
   }
@@ -284,7 +284,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (snapshot) replace(snapshot.permissions, permission, value => value.id)
     resolvePermissions()
   }
-  async function resume(sessionId: string): Promise<void> { snapshotReceived(await mutation("_deskfleet/session/resume", { sessionId })) }
   async function stop(sessionId: string): Promise<void> { snapshotReceived(await mutation("_deskfleet/session/stop", { sessionId })) }
   async function remove(sessionId: string): Promise<void> {
     await mutation("_deskfleet/session/delete", { sessionId })
@@ -293,5 +292,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     journals.delete(sessionId)
   }
   onScopeDispose(() => { disposed = true; client.close() })
-  return { sessions, views, drafts, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, resume, stop, remove }
+  return { sessions, views, drafts, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, remove }
 })

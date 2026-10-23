@@ -50,6 +50,7 @@ async fn create(local: &LocalCatalog) -> AgentCreatedSession {
             workspace_id: workspace.workspace.id,
             provider: "codex".into(),
             title: "Test".into(),
+            context: SessionContext::Worktree,
         })
         .await
         .unwrap()
@@ -124,7 +125,8 @@ async fn identity_allocator_and_atomic_creation_survive_restart() {
                 command: duplicate,
                 workspace_id: created.session.workspace_id,
                 provider: "codex".into(),
-                title: "duplicate".into()
+                title: "duplicate".into(),
+                context: SessionContext::Worktree,
             })
             .await
             .is_err()
@@ -573,6 +575,29 @@ async fn concurrent_permission_decisions_commit_only_the_first_and_preserve_audi
             .await
             .unwrap()
             .is_some()
+    );
+    local.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn session_context_is_recorded_at_creation_and_immutable() {
+    let file = File::new();
+    let local = LocalCatalog::open(&file.0, "host").await.unwrap();
+    let created = create(&local).await;
+    assert_eq!(created.session.context, SessionContext::Worktree);
+    let mut commit = transaction(&created.session);
+    commit.session = Some(AgentSessionRecord {
+        context: SessionContext::Directory,
+        ..created.session.clone()
+    });
+    assert!(local.agent_commit(commit).await.is_err());
+    let stored: AgentSessionRecord = parse(
+        json!({"id": "1", "workspaceId": "1", "provider": "codex", "title": "", "lifecycle": "ready", "lastEventSeq": "0", "createdAt": TIME, "updatedAt": TIME}),
+    );
+    assert_eq!(
+        stored.context,
+        SessionContext::Worktree,
+        "records without a context used a worktree"
     );
     local.close().await.unwrap();
 }

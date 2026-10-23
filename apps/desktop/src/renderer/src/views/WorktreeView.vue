@@ -21,7 +21,7 @@ const available = computed(() => fleet.canManageCatalog && location.value?.machi
 <template>
   <PaneHeader>
     <template v-if="location">
-      {{ worktreeLabel() }}
+      {{ worktreeLabel(location.session) }}
       <ResourcePath :segments="[location.machine.name, location.workspace.name, sessionLabel(location.session)]" />
     </template>
   </PaneHeader>

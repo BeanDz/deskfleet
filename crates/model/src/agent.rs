@@ -28,6 +28,18 @@ states!(ActorKind {
     User => "user",
     System => "system",
 });
+states!(SessionContext {
+    Worktree => "worktree",
+    Directory => "directory",
+});
+
+/// Sessions recorded before the execution context was selectable used a worktree.
+impl Default for SessionContext {
+    fn default() -> Self {
+        Self::Worktree
+    }
+}
+
 states!(SessionLifecycle {
     Provisioning => "provisioning",
     Ready => "ready",
@@ -122,6 +134,9 @@ pub struct AgentSessionRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_session_id: Option<String>,
     pub title: String,
+    /// A generated worktree, or the Workspace's own directories used in place.
+    #[serde(default)]
+    pub context: SessionContext,
     pub lifecycle: SessionLifecycle,
     pub last_event_seq: AgentSequence,
     pub created_at: String,
@@ -309,6 +324,7 @@ pub struct AgentCreateSession {
     pub workspace_id: WorkspaceId,
     pub provider: String,
     pub title: String,
+    pub context: SessionContext,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

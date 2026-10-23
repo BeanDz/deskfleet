@@ -4,7 +4,8 @@ import { onClickOutside } from "@vueuse/core"
 import { nextTick, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import IconButton from "../common/IconButton.vue"
-defineProps<{ canStop: boolean; disabled: boolean }>()
+/** A directory Session's deletion leaves the Workspace's files in place. */
+defineProps<{ canStop: boolean; disabled: boolean; directory?: boolean }>()
 const emit = defineEmits<{ stop: []; delete: [] }>()
 const { t } = useI18n()
 const menu = useTemplateRef<HTMLElement>("menu")
@@ -34,7 +35,7 @@ function confirm(): void {
       <button type="button" role="menuitem" class="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] text-ui-danger hover:bg-ui-hover" @click="choose('delete')"><Trash2 :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.delete') }}</button>
     </div>
     <dialog ref="dialog" class="ui-dialog w-[24rem]" @close="confirming = null">
-      <p class="m-0 mb-4 text-sm">{{ t(confirming === 'stop' ? 'agent.stopQuestion' : 'agent.deleteQuestion') }}</p>
+      <p class="m-0 mb-4 text-sm">{{ t(confirming === 'stop' ? 'agent.stopQuestion' : directory ? 'agent.deleteDirectoryQuestion' : 'agent.deleteQuestion') }}</p>
       <div class="flex justify-end gap-2">
         <button type="button" class="catalog-button" @click="dialog?.close()">{{ t('catalog.cancel') }}</button>
         <button type="button" class="catalog-button" :class="confirming === 'delete' && 'text-ui-danger'" @click="confirm">{{ t(confirming === 'stop' ? 'agent.stop' : 'catalog.confirmDelete') }}</button>

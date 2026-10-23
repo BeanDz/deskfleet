@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -21,6 +21,7 @@ class Provider implements AgentProvider {
   prompts: string[] = []
   steers: string[] = []
   resumes: string[] = []
+  cwds: string[] = []
   cancelCount = 0
   clients: AgentClient[] = []
   closeCount = 0
@@ -33,7 +34,7 @@ class Provider implements AgentProvider {
     this.clients.push(client)
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
-      newSession: async () => ({ sessionId: "provider-conversation" }),
+      newSession: async params => { this.cwds.push(params.cwd); return { sessionId: "provider-conversation" } },
       resume: async params => { this.resumes.push(params.sessionId); await this.resumeWait?.promise; return {} },
       prompt: async params => {
         this.prompts.push(params.prompt.map(item => item.type === "text" ? item.text : "").join(""))
@@ -94,7 +95,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }) {
   const actor: AgentActor = { ...service.actor(), kind: "user", userId: "alice" }
   const bob: AgentActor = { ...actor, userId: "bob", sourceMachine: { originId: "other-origin", id: "2" } }
   t.after(async () => { try { await service.close() } finally { await catalog.close(); await rm(directory, { recursive: true, force: true }) } })
-  const create = { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex" }
+  const create = { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "worktree" }
   const snapshot = await service.handle("_deskfleet/session/create", create, actor) as AgentSnapshot
   assert.equal(snapshot.session.lifecycle, "ready")
   const sessionId = snapshot.session.id
@@ -103,7 +104,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }) {
     const params = { sessionId, operationId: randomUUID(), content: [{ type: "text", text }], delivery, ...(turnId ? { turnId } : {}) }
     return { params, result: service.handle("_deskfleet/input/submit", params, who) as Promise<AgentReceipt> }
   }
-  return { catalog, service, provider, actor, bob, create, snapshot, sessionId, read, submit }
+  return { catalog, service, provider, actor, bob, create, snapshot, sessionId, read, submit, directory, repository }
 }
 
 test("concurrent users share durable backlog and retries do not duplicate inputs or worktrees", async t => {
@@ -252,9 +253,9 @@ test("an immediate resume waits for unexpected-close recovery before starting an
 test("immediately completed prompts drain every queued candidate without a lost dispatch wakeup", async t => {
   const f = await setup(t)
   await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
-  for (const text of ["one", "two", "three"]) await f.submit(text).result
   f.provider.finishImmediately = true
-  await f.service.handle("_deskfleet/session/resume", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  // The first message resumes the agent; the others queue while it starts.
+  for (const text of ["one", "two", "three"]) await f.submit(text).result
   await until(f.read, state => state.inputs.every(input => input.state === "delivered"))
   assert.deepEqual(f.provider.prompts, ["one", "two", "three"])
 })
@@ -266,7 +267,7 @@ test("interrupted creation returns a full snapshot and deletion recovers a missi
     id: await f.service.journal.id(), operationId: params.operationId, actor: f.actor,
     workspaceId: params.workspaceId, method: "_deskfleet/session/create", params,
     isCanonical: true, status: "accepted", receivedAt: new Date().toISOString(),
-  }, params.workspaceId, "Interrupted")
+  }, params.workspaceId, "Interrupted", "worktree")
   const result = await f.service.handle("_deskfleet/session/create", params, f.actor) as AgentSnapshot
   assert.equal(result.session.id, created.id)
   assert.equal(result.session.lifecycle, "provisioning")
@@ -343,4 +344,61 @@ test("shutdown also stops a resume already queued behind another stop", async t 
   await Promise.all([stopping, resuming, closing])
   assert.ok((await f.read()).runs.every(run => ["stopped", "failed", "interrupted"].includes(run.state)))
   assert.equal(f.provider.closeCount, f.provider.clients.length)
+})
+
+test("a directory Session works in the Workspace's own directories, even without Git, and deletion leaves them", async t => {
+  const f = await setup(t)
+  const plain = join(f.directory, "plain")
+  await mkdir(plain)
+  await writeFile(join(plain, "notes.txt"), "keep\n")
+  const workspace = await f.catalog.native.createWorkspace("Plain", [{ path: plain }])
+  const params = { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "directory" }
+  const snapshot = await f.service.handle("_deskfleet/session/create", params, f.actor) as AgentSnapshot
+  assert.equal(snapshot.session.lifecycle, "ready")
+  assert.equal(snapshot.session.context, "directory")
+  const owned = (await f.catalog.native.snapshot()).workspaces.find(value => value.id === workspace.id)!.worktrees.find(value => value.sessionId === snapshot.session.id)
+  assert.deepEqual(owned?.directories, [{ path: plain }])
+  await until(async () => f.provider.cwds, cwds => cwds.includes(plain))
+  await f.service.handle("_deskfleet/session/delete", { sessionId: snapshot.session.id, operationId: randomUUID() }, f.actor)
+  assert.equal(await readFile(join(plain, "notes.txt"), "utf8"), "keep\n")
+  assert.equal(f.snapshot.session.context, "worktree")
+  assert.notEqual(f.provider.cwds[0], f.repository, "A worktree Session must not run in the source checkout")
+})
+
+test("a worktree Session still requires a committed Git checkout", async t => {
+  const f = await setup(t)
+  const plain = join(f.directory, "plain")
+  await mkdir(plain)
+  const workspace = await f.catalog.native.createWorkspace("Plain", [{ path: plain }])
+  const snapshot = await f.service.handle("_deskfleet/session/create", { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "worktree" }, f.actor) as AgentSnapshot
+  assert.equal(snapshot.session.lifecycle, "provision_failed")
+  assert.match(snapshot.session.error ?? "", /Git working tree/u)
+})
+
+test("a new message resumes a stopped agent in its saved conversation and drains the backlog in order", async t => {
+  const f = await setup(t)
+  f.provider.finishImmediately = true
+  await f.submit("first").result
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await f.submit("queued while stopped", f.bob).result
+  await until(f.read, state => state.turns.filter(turn => turn.state === "completed").length === 2)
+  assert.deepEqual(f.provider.resumes, ["provider-conversation"])
+  assert.deepEqual(f.provider.prompts, ["first", "queued while stopped"])
+  assert.equal((await f.read()).runs.at(-1)?.state, "running")
+})
+
+test("a message to an agent that cannot resume its conversation is rejected instead of queued forever", async t => {
+  const f = await setup(t)
+  f.provider.finishImmediately = true
+  await f.submit("first").result
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  await f.service.journal.serial(f.sessionId, async () => {
+    const current = await f.read()
+    const session = { ...current.session, capabilities: { steering: true, resume: false } }
+    await f.service.journal.commit(current, { session, events: [f.service.journal.event(f.sessionId, "session", session)] })
+  })
+  await assert.rejects(f.submit("lost").result, /cannot resume/u)
+  assert.equal((await f.read()).inputs.some(input => input.content.some(block => block.type === "text" && block.text === "lost")), false)
 })

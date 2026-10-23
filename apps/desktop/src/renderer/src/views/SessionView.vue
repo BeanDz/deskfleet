@@ -29,7 +29,8 @@ const connected = computed(() => agents.state === "connected")
 const canResume = computed(() => !snapshot.value?.session.providerSessionId || !!snapshot.value.session.capabilities?.resume)
 const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering && activeTurn.value?.state === "running")
 const runActive = computed(() => !!run.value && ["starting", "running"].includes(run.value.state))
-const runEnded = computed(() => snapshot.value?.session.lifecycle === "ready" && !!run.value && ["stopped", "interrupted", "failed"].includes(run.value.state))
+// A stopped or interrupted agent resumes on the next message; only a dead end is shown.
+const resumeUnavailable = computed(() => snapshot.value?.session.lifecycle === "ready" && run.value?.state !== "running" && !canResume.value)
 const draft = computed({ get: () => agents.drafts[props.sessionId] ?? "", set: value => { agents.drafts[props.sessionId] = value } })
 const unresolvedSubmission = computed(() => Object.values(agents.operations).some(operation => operation.sessionId === props.sessionId && operation.text === draft.value))
 const pending = computed(() => Object.values(agents.operations).filter(operation => operation.sessionId === props.sessionId && operation.error))
@@ -66,7 +67,7 @@ function remove(): void {
 <template>
   <PaneHeader>
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, location.workspace.name]" /></template>
-    <template v-if="snapshot" #actions><AgentSessionMenu :can-stop="runActive" :disabled="!connected || busy" @stop="action(() => agents.stop(sessionId))" @delete="remove" /></template>
+    <template v-if="snapshot" #actions><AgentSessionMenu :can-stop="runActive" :disabled="!connected || busy" :directory="snapshot.session.context === 'directory'" @stop="action(() => agents.stop(sessionId))" @delete="remove" /></template>
   </PaneHeader>
   <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @scroll="scroll">
     <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
@@ -89,12 +90,10 @@ function remove(): void {
       <AgentNotice v-if="snapshot.session.lifecycle !== 'ready'" :tone="snapshot.session.lifecycle === 'provision_failed' ? 'danger' : 'progress'" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
       <AgentNotice v-else-if="snapshot.session.error" tone="danger" :text="snapshot.session.error" />
       <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
-      <AgentNotice v-else-if="runEnded" :tone="run!.state === 'failed' ? 'danger' : 'info'" :text="t(`agent.runState.${run!.state}`)" :detail="run!.error ?? (canResume ? null : t('agent.resumeUnavailable'))">
-        <button v-if="canResume" type="button" class="catalog-button" :disabled="!connected || busy" @click="action(() => agents.resume(sessionId))">{{ t('agent.resume') }}</button>
-      </AgentNotice>
+      <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
       <AgentPermissions :permissions="snapshot.permissions" :disabled="!connected || busy" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
       <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!connected || busy" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
     </template>
   </div>
-  <SessionComposer v-if="location" v-model="draft" :location="location" :provider="location.session.provider" :disabled="!connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :waiting-for-agent="run?.state !== 'running'" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
+  <SessionComposer v-if="location" v-model="draft" :location="location" :provider="location.session.provider" :disabled="!connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
 </template>

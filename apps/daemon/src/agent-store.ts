@@ -1,6 +1,6 @@
 import type {
   AgentActor, AgentCommand, AgentCommit, AgentEvent, AgentEventDraft,
-  AgentSessionRecord, AgentSnapshot,
+  AgentSessionContext, AgentSessionRecord, AgentSnapshot,
 } from "./agent-protocol.ts"
 
 export interface AgentPersistence {
@@ -69,8 +69,8 @@ export class AgentJournal {
     }
     return result.events
   }
-  async create(command: AgentCommand, workspaceId: string, title: string): Promise<AgentSessionRecord> {
-    const result = JSON.parse(await this.native.agentCreateSession(JSON.stringify({ command, workspaceId, provider: "codex", title }))) as { session: AgentSessionRecord }
+  async create(command: AgentCommand, workspaceId: string, title: string, context: AgentSessionContext): Promise<AgentSessionRecord> {
+    const result = JSON.parse(await this.native.agentCreateSession(JSON.stringify({ command, workspaceId, provider: "codex", title, context }))) as { session: AgentSessionRecord }
     return result.session
   }
 }

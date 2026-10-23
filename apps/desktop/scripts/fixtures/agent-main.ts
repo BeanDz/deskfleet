@@ -114,7 +114,8 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   } else {
     require(sessionId && workspaceId && worktreeId, "Restore identities are required")
     await openSession(sessionId)
-    await until(() => !!conversation()?.innerText.includes("queued reply") && !!button("Resume agent"), "Conversation replay after daemon restart")
+    await until(() => !!conversation()?.innerText.includes("queued reply"), "Conversation replay after daemon restart")
+    require(![...document.querySelectorAll('[role="status"]')].some(element => /stopped|interrupted|Resume/u.test(element.textContent ?? "")), "An interrupted agent must not ask to be resumed")
     const workspace = (await api.catalog.list()).workspaces.find(value => value.id === workspaceId)
     require(workspace?.worktrees.some(value => value.id === worktreeId && value.sessionId === sessionId), "Restart replaced the Session's Worktree")
     require(!button("Cancel turn"), "Restart must not silently re-run a completed prompt")

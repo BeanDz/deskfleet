@@ -34,6 +34,8 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? "null"
 }
 const liveTurn = (state: string) => ["starting", "running", "cancelling"].includes(state)
+/** A provider conversation can only continue in a new run when the agent supports resume. */
+const resumable = (snapshot: AgentSnapshot) => !snapshot.session.providerSessionId || !!snapshot.session.capabilities?.resume
 
 /** Durable collaboration belongs to the daemon, not to a client connection. */
 export class AgentSessions {
@@ -183,11 +185,13 @@ export class AgentSessions {
 
   async #create(command: AgentCommand): Promise<AgentSnapshot> {
     if (command.params.provider !== undefined && command.params.provider !== "codex") throw new Error("Unknown Agent provider")
+    const context = command.params.context
+    if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
-    const session = await this.journal.create(command, command.workspaceId!, title)
+    const session = await this.journal.create(command, command.workspaceId!, title, context)
     command.sessionId = session.id
     try {
-      await this.#catalog.provisionSession(session.id, session.workspaceId)
+      await this.#catalog.provisionSession(session.id, session.workspaceId, context)
       await this.journal.serial(session.id, async () => {
         const snapshot = await this.journal.read(session.id)
         const ready = { ...snapshot.session, lifecycle: "ready" as const, updatedAt: timestamp() }
@@ -220,6 +224,7 @@ export class AgentSessions {
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
       if (snapshot.session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
+      if (!runtime.running && !resumable(snapshot)) throw new Error("This agent cannot resume the saved conversation")
       const input: AgentInput = {
         id: inputId, sessionId, submissionCommandId: command.id, author: command.actor, content: blocks,
         acceptedSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n), state: delivery === "steer" ? "dispatching" : "pending", requestedDelivery: delivery,
@@ -233,8 +238,16 @@ export class AgentSessions {
       ] })
     })
     if (delivery === "steer") this.#steerLater(command, inputId, command.params.turnId as string | undefined)
-    else void runtime.pump()
+    else this.#deliver(sessionId)
     return receipt
+  }
+
+  /** A new user request resumes a stopped or interrupted agent; startup then drains the backlog. */
+  #deliver(sessionId: string): void {
+    const runtime = this.#runtime(sessionId)
+    if (runtime.running || this.#closed) void runtime.pump()
+    // Startup failures are persisted on the run; the input stays queued for the next request.
+    else void runtime.start().catch(() => {})
   }
 
   #steerLater(command: AgentCommand, inputId: string, turnId?: string): void {
@@ -278,6 +291,7 @@ export class AgentSessions {
       await this.journal.commit(snapshot, { inputs: [input], command: { ...command, status: steering ? "accepted" : "completed", result: receipt, completedAt: steering ? undefined : timestamp() }, events: [this.journal.event(sessionId, "input", input)] })
     })
     if (command.method === "_deskfleet/input/steer") this.#steerLater(command, inputId, command.params.turnId as string)
+    else if (command.method === "_deskfleet/input/retry") this.#deliver(sessionId)
     else void this.#runtime(sessionId).pump()
     return receipt
   }

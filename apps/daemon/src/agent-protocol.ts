@@ -11,12 +11,16 @@ export interface AgentActor {
   deviceId?: string
 }
 
+export type AgentSessionContext = "worktree" | "directory"
+
 export interface AgentSessionRecord {
   id: string
   workspaceId: string
   provider: string
   providerSessionId?: string
   title: string
+  /** A generated worktree, or the Workspace's own directories used in place. */
+  context: AgentSessionContext
   lifecycle: "provisioning" | "ready" | "provision_failed" | "deleting"
   lastEventSeq: string
   createdAt: string
@@ -136,7 +140,7 @@ export interface AgentReceipt { operationId: string; commandId: string; inputId?
 export interface AgentMutation { sessionId: string; operationId: string }
 export interface AgentMethods {
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
-  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider?: "codex" }; result: AgentSnapshot }
+  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider?: "codex"; context: AgentSessionContext }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
   "_deskfleet/input/submit": { params: AgentMutation & { content: ContentBlock[]; delivery: "backlog" | "steer"; turnId?: string }; result: AgentReceipt }

@@ -93,7 +93,7 @@ export const useFleetStore = defineStore("fleet", () => {
       for (const metadata of Object.values(agents.sessions)) {
         if (metadata.workspaceId !== workspace.id) continue
         const summary = summaries.get(metadata.id) ?? { id: metadata.id }
-        Object.assign(summary, { title: metadata.title, provider: metadata.provider })
+        Object.assign(summary, { title: metadata.title, provider: metadata.provider, context: metadata.context })
         summaries.set(summary.id, summary)
       }
       workspace.sessions = [...summaries.values()]

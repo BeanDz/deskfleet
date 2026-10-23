@@ -41,7 +41,7 @@ afterEach(() => {
 
 test("the app targets a workspace and lists its sessions without exposing an internal main worktree", async () => {
   const wrapper = await mountApp()
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "Codex"])
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
   expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(true)
   expect(wrapper.get("aside").text()).not.toContain("Example team")
   expect(link(wrapper, "storefront").attributes("href")).toBe(`#/workspaces/${workspaceId}`)
@@ -93,7 +93,7 @@ test("workspace creation opens a dialog, requires paths, supports choosing the f
   expect(wrapper.get("main").text()).toContain("/code")
   await link(wrapper, "New session").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "Codex"])
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
   expect(panel(wrapper).text()).toContain("/code")
   expect(panel(wrapper).text()).toContain("/notes")
 })
@@ -145,7 +145,7 @@ test("workspace New session chooses that workspace before opening the composer",
   expect(wrapper.get("main").text()).toContain("No sessions yet.")
   await button(wrapper, "New session").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "Codex"])
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
   expect(panel(wrapper).text()).toContain("/notes")
   expect(panel(wrapper).text()).not.toContain("/code/web")
 })
@@ -214,7 +214,8 @@ test("the internal main worktree has no directly accessible page", async () => {
 test("the localized composer and local footer do not expose an internal main worktree", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
   const wrapper = await mountApp()
-  expect(chips(wrapper)).toHaveLength(3)
+  expect(chips(wrapper)).toHaveLength(4)
+  expect(chips(wrapper)).toContain("新建工作树")
   expect(chips(wrapper)).toContain("storefront")
   expect(wrapper.text()).not.toContain("主工作树")
   expect(wrapper.get("footer").text()).toBe("本本地")

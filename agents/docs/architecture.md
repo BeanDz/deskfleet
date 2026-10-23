@@ -83,14 +83,19 @@ Sessions to display. New-session composition targets the Workspace; an existing
 Session exposes its own Worktree. Updating the Workspace changes its configured
 directories without retargeting existing Session contexts.
 
-Worktrees are not independently maintained resources. Each managed Session
-allocates its own Worktree automatically; destroying that Session removes its
-owned Worktree. For Git-backed contexts, the daemon creates detached Git worktrees
+Worktrees are not independently maintained resources. Each Session record owns
+one Worktree record, created and destroyed with it. Creating a Session chooses
+its context. A **worktree** Session allocates generated checkouts; destroying it
+removes them. A **directory** Session records the Workspace's current paths and
+works in them directly, including their uncommitted changes and non-Git
+directories; destroying it removes only its records, never those files. The
+choice is immutable. Sessions sharing directories are not isolated from each
+other or from the user's own edits. For worktree contexts, the daemon creates detached Git worktrees
 from the configured checkouts' HEAD commits, grouping paths in the same checkout
 and preserving subdirectory positions. Uncommitted source changes are not copied.
-The first derived path is the Session's default working directory. Workspace
-paths may be non-Git for main-context terminals; creating an isolated Session
-requires Git-backed paths with a commit.
+The first path is the Session's default working directory. Workspace paths may
+be non-Git for main-context terminals and directory Sessions; creating a worktree
+Session requires Git-backed paths with a commit.
 
 For example:
 
@@ -174,7 +179,7 @@ path conventions. The current client connects this dialog to the local daemon;
 remote routing can supply the same browser callback when connected. It does not
 use the operating system's folder picker.
 
-Session creation allocates a durable Session ID and creates Git worktrees beneath
+Worktree Session creation allocates a durable Session ID and creates Git worktrees beneath
 `<daemon directory>/session-worktrees/<session ID>/`. A manifest records generated
 paths for cleanup after restart. Failure rolls back generated checkouts. Explicit
 Session destruction removes those disposable checkouts, including their local

@@ -48,10 +48,11 @@ impl LocalCatalog {
                     if next.id != current.id
                         || next.workspace_id != current.workspace_id
                         || next.provider != current.provider
+                        || next.context != current.context
                         || next.created_at != current.created_at
                     {
                         return Err(StoreError::InvalidAgent(
-                            "session ownership and provider are immutable",
+                            "session ownership, provider, and context are immutable",
                         ));
                     }
                     Some(AgentSessionRecord {

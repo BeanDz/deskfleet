@@ -124,9 +124,12 @@ describes its target Workspace.
 
 Install and authenticate Codex CLI on the daemon's machine before sending a
 prompt. The bundled ACP adapter uses that CLI and its credentials. **New session**
-creates a persistent Session and an isolated Git Worktree from the selected
-Workspace, then submits the prompt. Provisioning failures remain visible with
-their error and can be deleted; they do not expose a usable Worktree.
+creates a persistent Session for the selected Workspace, then submits the prompt.
+The composer's context menu chooses **New worktree**, isolated Git checkouts from
+each directory's committed HEAD, or **Working directory**, which works in the
+Workspace's directories with their uncommitted changes. The last choice is
+remembered. Provisioning failures remain visible with their error and can be
+deleted; they do not expose a usable Worktree.
 
 The conversation shows streamed text, tool calls, plans, and permission requests.
 Messages submitted during a turn enter the shared candidate backlog. **Steer now**
@@ -138,11 +141,12 @@ operator who steered it. A permission answered by another client immediately sho
 that decision and removes the choices.
 
 **Cancel turn** ends the current turn. **Stop agent** preserves the conversation,
-backlog, and Worktree. **Resume agent** continues the saved provider session when
-supported. **Delete session** removes its conversation and managed checkouts;
+backlog, and Worktree. The next message resumes the saved provider session when
+supported; there is no separate resume control. **Delete session** removes its conversation and any generated
+checkouts; a working-directory Session's files are left in place;
 command audit remains in the daemon database. Navigating away, disconnecting, or
 closing the window leaves the agent running; quitting the app stops it. Restarting the daemon retains history
-and marks interrupted runs for explicit resumption.
+and marks interrupted runs; the next message resumes them.
 
 `useAgentSessionsStore` subscribes to snapshots and replays the committed event
 journal in sequence order. Reconnecting checks pending operation IDs instead of

@@ -188,6 +188,7 @@ impl LocalCatalog {
             provider: request.provider,
             provider_session_id: None,
             title: request.title,
+            context: request.context,
             lifecycle: SessionLifecycle::Provisioning,
             last_event_seq: 0.into(),
             created_at: request.command.received_at.clone(),
