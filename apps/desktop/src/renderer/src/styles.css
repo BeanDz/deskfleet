@@ -124,6 +124,19 @@ textarea {
   outline-offset: -2px;
 }
 
+.ui-dialog {
+  max-width: calc(100vw - 2rem);
+  padding: 1.25rem;
+  border: 1px solid var(--ui-color-border);
+  border-radius: 0.75rem;
+  background: var(--ui-color-canvas);
+  color: var(--ui-color-text);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 24%);
+}
+.ui-dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
 .catalog-input {
   width: 100%;
   min-width: 0;

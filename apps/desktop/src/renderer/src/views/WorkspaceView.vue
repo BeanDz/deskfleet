@@ -50,7 +50,7 @@ async function remove(): Promise<void> {
           <h2 class="ui-section-title">{{ t("worktree.directories") }}</h2>
           <button type="button" class="catalog-button" :disabled="!editable || editing" @click="editing = true">{{ t("workspace.edit") }}</button>
         </div>
-        <WorkspaceForm v-if="editing" :key="workspaceId" :initial="{ name: location.workspace.name, directories }" :submit-label="t('catalog.save')" :disabled="!editable" :save="save" @cancel="editing = false" />
+        <WorkspaceForm v-if="editing" :key="workspaceId" class="rounded-lg border border-ui-border bg-ui-surface p-3" :initial="{ name: location.workspace.name, directories }" :submit-label="t('catalog.save')" :disabled="!editable" :save="save" @cancel="editing = false" />
         <DirectoryList v-else :directories="directories" :disabled="!editable" default-action />
       </section>
       <section>

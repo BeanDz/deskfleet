@@ -18,11 +18,12 @@
     "team": "Switch team"
   },
   "settings": {
-    "localAgent": "Local Agent",
-    "enableLocalAgent": "Enable local Agent",
-    "autoStart": "Start the local Agent automatically when deskfleet opens.",
-    "keepRunning": "Quitting deskfleet leaves the local Agent running.",
-    "stopEffect": "Turning this off stops the local Agent and its active terminals.",
+    "preferences": "Preferences",
+    "thisComputer": "This computer",
+    "runLocalAgent": "Run local Agent",
+    "stopsTerminals": "Turning it off also stops its terminals.",
+    "sections": "Settings sections",
+    "back": "Back to app",
     "loading": "Loading settings…",
     "unavailable": "Settings unavailable",
     "stopped": "Stopped",
@@ -30,7 +31,7 @@
     "running": "Running",
     "stopping": "Stopping…",
     "error": "Local Agent failed",
-    "runningSeparately": "The local Agent was started separately and is still running.",
+    "runningSeparately": "Running separately",
     "retryStart": "Retry start",
     "retryStop": "Retry stop",
     "retryLoad": "Reload settings"
@@ -164,9 +165,9 @@
     "loading": "Loading workspaces…",
     "refresh": "Refresh",
     "offline": "The local daemon is unavailable. Refresh to reconnect.",
-    "workspaceName": "Workspace name",
-    "directoryPath": "Directory {number} path",
-    "absolutePath": "Absolute path on this machine",
+    "workspaceName": "Name",
+    "directoryPath": "Directory {number}",
+    "absolutePath": "Absolute path",
     "removeDirectory": "Remove directory {number}",
     "addDirectory": "Add directory",
     "nameRequired": "Enter a name.",
@@ -177,9 +178,9 @@
     "cancel": "Cancel",
     "confirmDelete": "Confirm deletion",
     "defaultDirectory": "Default",
-    "defaultDirectoryHint": "The first directory is the default. Move a path up or down to change the order.",
     "moveDirectoryUp": "Move directory {number} up",
-    "moveDirectoryDown": "Move directory {number} down"
+    "moveDirectoryDown": "Move directory {number} down",
+    "newWorkspace": "New workspace"
   },
   "workspace": {
     "notFound": "This workspace does not exist.",

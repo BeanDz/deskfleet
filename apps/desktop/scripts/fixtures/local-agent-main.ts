@@ -44,10 +44,20 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     }
   }
   const toggle = () => document.querySelector<HTMLButtonElement>('main [role="switch"]')
+  const settingsButton = () => document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')
   const addWorkspace = () => document.querySelector<HTMLButtonElement>('button[aria-label="Add workspace"]')
   const sidebarWorkspace = () => [...document.querySelectorAll("aside a")].some(link => link.textContent?.trim() === "Local Agent smoke")
+  // Settings replaces the sidebar, so sidebar checks happen after returning to the app.
+  async function openSettings(): Promise<void> {
+    settingsButton()!.click()
+    await until(() => !!toggle() && !toggle()!.disabled, "Settings page")
+  }
+  async function leaveSettings(): Promise<void> {
+    [...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "Back to app")!.click()
+    await until(() => !!settingsButton(), "Return from Settings")
+  }
   async function change(enabled: boolean): Promise<void> {
-    await until(() => !!toggle() && !toggle()!.disabled, "Local Agent switch")
+    await openSettings()
     require(toggle()!.getAttribute("aria-checked") === String(!enabled), "Switch preference did not match the previous state")
     toggle()!.click()
     await until(async () => {
@@ -56,17 +66,17 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
       return state.enabled === enabled && state.status === (enabled ? "running" : "stopped")
     }, enabled ? "Agent restart" : "Agent stop")
     await until(() => toggle()?.getAttribute("aria-checked") === String(enabled) && !toggle()!.disabled, "Saved Agent preference")
+    await leaveSettings()
     await until(() => enabled ? !!addWorkspace() && addWorkspace()!.getAttribute("aria-disabled") !== "true" : document.querySelector("aside")!.textContent!.includes("Offline"), "Catalog lifecycle refresh")
   }
 
-  await until(() => !!document.querySelector("main h1") && !!document.querySelector('button[aria-label="Settings"]'), "Initial renderer route")
-  document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')!.click()
-  await until(() => !!toggle() && !toggle()!.disabled, "Settings page")
+  await until(() => !!document.querySelector("main h1") && !!settingsButton(), "Initial renderer route")
   const initial = await api.settings.get()
-  require(document.body.innerText.includes("Quitting deskfleet leaves the local Agent running."), "Settings lifecycle explanation is missing")
   if (context.phase === "disabled") {
     require(!initial.enabled && initial.status === "stopped", "Disabled startup must leave the Agent stopped")
+    await openSettings()
     require(toggle()!.getAttribute("aria-checked") === "false", "Persisted disabled preference was not rendered")
+    await leaveSettings()
     await until(() => document.querySelector("aside")!.textContent!.includes("Offline"), "Disabled machine status")
     require(!(await api.desktop.target()).online, "Disabled startup unexpectedly connected to a daemon")
     return {}

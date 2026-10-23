@@ -88,10 +88,16 @@ machines start collapsed and report when they were last seen.
 | `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
 | `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
-| `/settings` | Local Agent startup preference, run state, and retry |
+| `/settings/preferences` | Preferences, including the local Agent under This computer |
 
 A worktree page's New session action makes that worktree the new session's
 target.
+
+Settings routes (`meta.fullWindow`) replace the sidebar and details panel with
+two panels: the sections on the left and the selected section on the right.
+Section links replace their history entry, so **Back to app** or Escape returns
+to the page Settings opened from. **Preferences → This computer** holds the
+local Agent startup preference, run state, and retry.
 
 The details panel has two tabs:
 
@@ -165,7 +171,7 @@ starting another client.
 
 ## Local Agent
 
-**Settings → Local Agent** is enabled by default. The main process stores
+**Settings → Preferences → Run local Agent** is enabled by default. The main process stores
 `localAgentEnabled` in `settings.json` under Electron's `userData` directory.
 Enabling it starts the bundled daemon library in a detached Electron background
 process, or reuses the authenticated daemon already serving the same discovery
@@ -177,7 +183,7 @@ Turning the switch off requests authenticated daemon shutdown, including active
 terminal processes, and waits for cleanup. Workspace data and terminal history
 remain on disk. Turning it back on reconnects the UI to the new daemon. A failed
 start or stop appears in Settings with a retry action. Disabled startup does not
-terminate a daemon started separately; Settings reports that case explicitly.
+terminate a daemon started separately; Settings reports it as running separately.
 
 Closing or quitting the client only disconnects its IPC connection. The daemon
 keeps running, including across development client reloads. After changing daemon

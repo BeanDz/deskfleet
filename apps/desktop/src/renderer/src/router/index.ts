@@ -4,6 +4,8 @@ declare module "vue-router" {
   interface RouteMeta {
     /** Message key of a placeholder page's title. */
     titleKey?: string
+    /** The page draws its own navigation in place of the sidebar and details panel. */
+    fullWindow?: boolean
   }
 }
 
@@ -54,8 +56,16 @@ export const router = createRouter({
     },
     {
       path: "/settings",
-      name: "settings",
       component: () => import("../views/SettingsView.vue"),
+      meta: { fullWindow: true },
+      children: [
+        { path: "", name: "settings", redirect: { name: "settings-preferences" } },
+        {
+          path: "preferences",
+          name: "settings-preferences",
+          component: () => import("../components/settings/PreferencesSettings.vue"),
+        },
+      ],
     },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],

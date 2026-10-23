@@ -17,7 +17,7 @@ import { useWorktreeLabel } from "../../composables/useWorktreeLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import IconButton from "../common/IconButton.vue"
-import WorkspaceCreateForm from "../catalog/WorkspaceCreateForm.vue"
+import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import TreeLink from "./TreeLink.vue"
 
 const props = defineProps<{ machine: MachineSummary }>()
@@ -88,11 +88,11 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
           :disabled="creating"
           @click="createTerminal"
         />
-        <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="!machine.local" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = !addingWorkspace" />
+        <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="!machine.local" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true" />
       </div>
     </div>
     <p v-if="createError" role="alert" class="px-2.5 text-xs text-red-500">{{ createError }}</p>
-    <WorkspaceCreateForm v-if="addingWorkspace && machine.local" @created="workspaceCreated" @cancel="addingWorkspace = false" />
+    <WorkspaceCreateDialog v-if="addingWorkspace && machine.local" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
     <ul v-if="!collapsed" :id="listId">
       <li v-if="machine.desktop || machine.id === 'local-daemon'">

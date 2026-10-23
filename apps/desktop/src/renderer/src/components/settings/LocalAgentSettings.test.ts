@@ -1,8 +1,8 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { LocalAgentState } from "../../../shared/local-agent.ts"
-import { i18n } from "../i18n/index.ts"
-import SettingsView from "./SettingsView.vue"
+import type { LocalAgentState } from "../../../../shared/local-agent.ts"
+import { i18n } from "../../i18n/index.ts"
+import LocalAgentSettings from "./LocalAgentSettings.vue"
 
 let wrapper: VueWrapper | undefined
 let changed: (state: LocalAgentState) => void
@@ -10,8 +10,10 @@ const unsubscribe = vi.fn()
 const running: LocalAgentState = { enabled: true, status: "running" }
 const stopped: LocalAgentState = { enabled: false, status: "stopped" }
 
+const switchLabel = (view: VueWrapper) => view.get(`#${view.get('[role="switch"]').attributes("aria-labelledby")}`).text()
+
 function render() {
-  wrapper = mount(SettingsView, { global: { plugins: [i18n], stubs: { PaneHeader: { template: "<header><slot /></header>" } } } })
+  wrapper = mount(LocalAgentSettings, { global: { plugins: [i18n] } })
   return wrapper
 }
 
@@ -55,12 +57,11 @@ test("loads the saved preference before enabling changes and follows start progr
   expect(view.get('[role="switch"]').attributes("disabled")).toBeUndefined()
 })
 
-test("turns off directly, shows lifecycle consequences, and retains state after a rejected write", async () => {
+test("turns off directly, describes its effect on terminals, and retains state after a rejected write", async () => {
   const save = vi.spyOn(window.deskfleet.settings, "setLocalAgentEnabled").mockRejectedValueOnce(new Error("Could not save settings"))
   const view = render()
   await flushPromises()
-  expect(view.text()).toContain("Quitting deskfleet leaves the local Agent running.")
-  expect(view.text()).toContain("Turning this off stops the local Agent and its active terminals.")
+  expect(view.get(`#${view.get('[role="switch"]').attributes("aria-describedby")}`).text()).toBe("Turning it off also stops its terminals.")
   await view.get('[role="switch"]').trigger("click")
   await flushPromises()
   expect(save).toHaveBeenCalledExactlyOnceWith(false)
@@ -111,8 +112,6 @@ test("localizes settings and explains an independently started Agent", async () 
   vi.mocked(window.deskfleet.settings.get).mockResolvedValue({ enabled: false, status: "running" })
   const view = render()
   await flushPromises()
-  expect(view.get("h1").text()).toBe("本地 Agent")
-  expect(view.get('[role="switch"]').attributes("aria-label")).toBe("启用本地 Agent")
-  expect(view.get('[role="status"]').text()).toBe("运行中")
-  expect(view.text()).toContain("本地 Agent 由其他方式启动，目前仍在运行。")
+  expect(switchLabel(view)).toBe("运行本地 Agent")
+  expect(view.get('[role="status"]').text()).toBe("在外部运行")
 })

@@ -18,11 +18,12 @@
     "team": "切换团队"
   },
   "settings": {
-    "localAgent": "本地 Agent",
-    "enableLocalAgent": "启用本地 Agent",
-    "autoStart": "打开 deskfleet 时自动启动本地 Agent。",
-    "keepRunning": "退出 deskfleet 后，本地 Agent 会继续运行。",
-    "stopEffect": "关闭此开关会停止本地 Agent 及其正在运行的终端。",
+    "preferences": "偏好设置",
+    "thisComputer": "本机",
+    "runLocalAgent": "运行本地 Agent",
+    "stopsTerminals": "关闭后也会停止其终端。",
+    "sections": "设置分类",
+    "back": "返回应用",
     "loading": "正在加载设置…",
     "unavailable": "无法加载设置",
     "stopped": "已停止",
@@ -30,7 +31,7 @@
     "running": "运行中",
     "stopping": "正在停止…",
     "error": "本地 Agent 出错",
-    "runningSeparately": "本地 Agent 由其他方式启动，目前仍在运行。",
+    "runningSeparately": "在外部运行",
     "retryStart": "重试启动",
     "retryStop": "重试停止",
     "retryLoad": "重新加载设置"
@@ -164,9 +165,9 @@
     "loading": "正在加载工作区…",
     "refresh": "刷新",
     "offline": "本机守护进程不可用，请刷新以重新连接。",
-    "workspaceName": "工作区名称",
-    "directoryPath": "目录 {number} 路径",
-    "absolutePath": "本机上的绝对路径",
+    "workspaceName": "名称",
+    "directoryPath": "目录 {number}",
+    "absolutePath": "绝对路径",
     "removeDirectory": "移除目录 {number}",
     "addDirectory": "添加目录",
     "nameRequired": "请输入名称。",
@@ -177,9 +178,9 @@
     "cancel": "取消",
     "confirmDelete": "确认删除",
     "defaultDirectory": "默认目录",
-    "defaultDirectoryHint": "第一个目录为默认目录，可上下移动路径以调整顺序。",
     "moveDirectoryUp": "上移目录 {number}",
-    "moveDirectoryDown": "下移目录 {number}"
+    "moveDirectoryDown": "下移目录 {number}",
+    "newWorkspace": "新建工作区"
   },
   "workspace": {
     "notFound": "该工作区不存在。",

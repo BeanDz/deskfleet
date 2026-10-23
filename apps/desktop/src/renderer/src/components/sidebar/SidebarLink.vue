@@ -6,12 +6,15 @@ defineProps<{
   to: RouteLocationRaw
   icon: Component
   label: string
+  /** Replace the current history entry instead of adding one. */
+  replace?: boolean
 }>()
 </script>
 
 <template>
   <RouterLink
     :to="to"
+    :replace="replace"
     class="flex h-8 items-center gap-2.5 rounded-lg px-2.5 hover:bg-ui-hover"
     exact-active-class="bg-ui-active"
   >
