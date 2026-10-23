@@ -1,20 +1,23 @@
-# deskfleet-node
+# deskfleet-node / @deskfleet/native
 
-This crate is the Node-API boundary over `deskfleet-native`. The initial export,
-`nativeInfo()`, reports the addon version and Rust target OS/architecture without
-initializing a graphical subsystem.
+This crate exposes `deskfleet-native` through napi-rs. Its private pnpm package,
+`@deskfleet/native`, exports `nativeInfo()` with the addon version and Rust target
+OS/architecture.
 
-Build the native library from the repository root:
+Build from the repository root:
 
 ```sh
-mise exec -- cargo build -p deskfleet-node --locked
+mise run native:debug
+mise run native:release
 ```
 
-Cargo produces a platform library in `target/debug`: `libdeskfleet_node.dylib` on
-macOS, `libdeskfleet_node.so` on Linux, or `deskfleet_node.dll` on Windows. It can
-be loaded with Node's `process.dlopen()` for development; normal npm distribution
-will use the `.node` extension and a platform-aware loader.
+The napi-rs CLI builds `deskfleet.node` and generates `bindings.d.ts`. Keep the
+declarations in source control and regenerate them when the Rust exports change;
+the binary is ignored.
 
-CI builds the native library and server across the supported host platforms; see
-the [CI workflow](../../agents/docs/ci.md). The TypeScript package, generated
-declarations, SEA asset extraction, and Electron packaging are not implemented yet.
+The TypeScript loader calls `process.dlopen()` on the built addon. For a SEA
+executable it instead extracts the embedded `deskfleet.node` asset into a private
+temporary directory before loading.
+
+See the [daemon guide](../../apps/daemon/README.md) for packaging and the
+[CI workflow](../../agents/docs/ci.md) for platform checks.

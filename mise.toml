@@ -2,7 +2,7 @@ min_version = "2026.10.2"
 
 [settings]
 lockfile = true
-lockfile_platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64", "windows-x64"]
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64", "windows-x64"]
 
 [tools]
 apm = "0.34.0"
@@ -10,6 +10,10 @@ rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustf
 node = "24.21.0"
 pnpm = "12.14.0"
 "cargo:cargo-shear" = "1.13.5"
+
+[tasks.install]
+description = "Install the locked TypeScript workspace dependencies"
+run = "pnpm install --frozen-lockfile"
 
 [tasks."skills:install"]
 description = "Restore the pinned, repository-local agent skills"
@@ -20,8 +24,8 @@ description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
 
 [tasks.check]
-description = "Run static checks, script and Rust tests, and a debug build"
-depends = ["check:static", "check:scripts", "check:rust-tests", "rust:build"]
+description = "Run TypeScript and Rust checks, tests, and a debug build"
+depends = ["check:static", "test", "rust:build"]
 
 [tasks."check-fast"]
 description = "Run the Rust edit-loop checks"
@@ -40,12 +44,41 @@ description = "Check Rust dependencies and Clippy diagnostics"
 depends = ["rust:shear", "rust:clippy"]
 
 [tasks.test]
-description = "Run script and Rust tests"
-depends = ["check:scripts", "check:rust-tests"]
+description = "Run script, daemon, and Rust tests"
+depends = ["check:scripts", "check:daemon", "check:rust-tests"]
 
 [tasks.build]
-description = "Build the release server and native addon"
+description = "Build the release server and standalone daemon"
+depends = ["rust:release", "daemon:pack"]
+
+[tasks."rust:release"]
+hide = true
+wait_for = ["native:release"]
 run = "cargo build --workspace --release --locked"
+
+[tasks."native:debug"]
+hide = true
+depends = ["install"]
+run = "pnpm --filter @deskfleet/native build:debug"
+
+[tasks."native:release"]
+hide = true
+depends = ["install"]
+run = "pnpm --filter @deskfleet/native build"
+
+[tasks."daemon:dev"]
+description = "Run the standalone headless daemon from TypeScript"
+depends = ["native:debug"]
+run = "node apps/daemon/src/main.ts"
+
+[tasks."daemon:pack"]
+description = "Package the daemon as a Node.js single executable"
+depends = ["native:release"]
+run = "node scripts/build-sea.ts"
+
+[tasks."daemon:smoke"]
+description = "Verify an isolated SEA executable without an installed Node.js"
+run = "node scripts/smoke-daemon.ts"
 
 [tasks."rust:format"]
 hide = true
@@ -61,17 +94,18 @@ run = "cargo shear --locked"
 
 [tasks."rust:clippy"]
 hide = true
+wait_for = ["native:debug"]
 run = "cargo clippy --workspace --all-targets --locked -- -D warnings"
 
 [tasks."rust:test"]
 hide = true
 # Serialize Cargo tasks sharing target/ only when both are scheduled.
-wait_for = ["rust:clippy"]
+wait_for = ["native:debug", "rust:clippy"]
 run = "cargo test --workspace --locked"
 
 [tasks."rust:build"]
 hide = true
-wait_for = ["rust:clippy", "rust:test"]
+wait_for = ["native:debug", "rust:clippy", "rust:test"]
 run = "cargo build --workspace --locked"
 
 [tasks."check:rust-skills-harness"]
@@ -80,10 +114,21 @@ run = "node scripts/check-rust-skills-harness.ts"
 
 [tasks."check:static"]
 hide = true
-depends = ["check:rust-skills-harness", "rust:format:check", "rust:shear", "rust:clippy"]
+depends = ["check:rust-skills-harness", "check:types", "rust:format:check", "rust:shear", "rust:clippy"]
+
+[tasks."check:types"]
+hide = true
+depends = ["native:debug"]
+run = "pnpm typecheck"
+
+[tasks."check:daemon"]
+hide = true
+depends = ["native:debug"]
+run = "node --test apps/daemon/src/*.test.ts"
 
 [tasks."check:scripts"]
 hide = true
+depends = ["install"]
 run = "node --test scripts/*.test.ts"
 
 [tasks."check:rust-tests"]

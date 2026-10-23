@@ -5,8 +5,9 @@ computers. Users can browse workspaces and session history, inspect Git state,
 and access terminals or desktops on the machine doing the work.
 
 This document describes the planned system. The current implementation contains
-the Rust resource model, an Actix Web liveness endpoint, and a napi-rs addon that
-reports platform information.
+the Rust resource model, an Actix Web liveness endpoint, and an independent
+TypeScript daemon calling a napi-rs addon. The daemon runs from source or a SEA
+executable and exposes native information and a local health endpoint.
 
 ## Components
 
@@ -200,10 +201,10 @@ core-crate, binding, and TypeScript-service structure. Native operations must
 avoid blocking Node's event loop. Keep capture and encoding data in native code
 where passing frames through JavaScript would add unnecessary copies.
 
-Node.js SEA packages the daemon without a separate Node installation. Native
-addons need extraction to real files before loading. Test the resulting bundle
-on each supported OS/architecture; adapters and external tools may have their
-own runtime requirements.
+Node.js SEA packages the daemon and native addon with the pinned Node runtime.
+The addon is extracted to a private temporary directory before loading. See the
+[daemon guide](../../apps/daemon/README.md) for packaging and platform support.
+Agent adapters and external tools may have their own runtime requirements.
 
 Desktop capability is optional and initialized on demand. Missing displays or
 capture permissions must not prevent agents, Git, or terminals from working.
@@ -222,9 +223,9 @@ The Rust workspace has five crates:
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 
-Dependencies flow `server -> protocol -> model` and `node -> native`. Add the
-TypeScript daemon, Electron/web clients, and shared packages as their
-implementations begin. TypeScript wire types should derive from the same
+Dependencies flow `server -> protocol -> model`, `node -> native`, and
+`@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace currently contains
+the daemon and native package. TypeScript wire types should derive from the same
 authoritative contracts as Rust; napi declarations describe the native API
 separately.
 
@@ -238,9 +239,8 @@ and [agent guide](../../AGENTS.md) for repository conventions.
 
 ## Next milestone
 
-First validate the three integration boundaries: a SEA daemon loading the Rust
-addon, two ACP providers, and authenticated WebRTC with direct and TURN-relayed
-terminal access.
+The daemon/native packaging boundary is implemented. Next integrate two ACP
+providers and authenticated WebRTC with direct and TURN-relayed terminal access.
 
 Then complete one workflow: enroll a headless machine, register a workspace and
 a worktree spanning frontend/backend directories, run an agent, inspect its Git

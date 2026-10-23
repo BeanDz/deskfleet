@@ -7,13 +7,12 @@ central server, and uses WebRTC for terminal and desktop access. Workspaces
 contain worktrees that group directories and agent sessions. Git state is shown
 alongside sessions, and agents coordinate across machines through MCP tools.
 
-The project is a Rust and TypeScript monorepo. The central backend is open source
-in this repository and uses Actix Web. The machine daemon is planned as an
-independent TypeScript/Node.js SEA application, with an Electron desktop client.
+The project is a Rust and TypeScript monorepo. The central backend uses Actix Web.
+The independent TypeScript daemon calls Rust through napi-rs and packages as a
+Node.js Single Executable Application (SEA). An Electron client is planned.
 
-The initial implementation includes resource types, `GET /healthz`, and a native
-addon reporting platform information. Agent execution and remote access are
-planned.
+The current implementation includes resource types, the server's `GET /healthz`,
+and a daemon with native platform information and a local health endpoint.
 
 ## Rust workspace
 
@@ -34,8 +33,8 @@ mise install --locked
 mise run dev
 ```
 
-`mise.toml` manages tool versions; `mise.lock` locks tools and `Cargo.lock` locks
-Rust dependencies.
+`mise.toml` manages tool versions. `mise.lock`, `Cargo.lock`, and `pnpm-lock.yaml`
+lock tools, Rust dependencies, and JavaScript dependencies respectively.
 
 The server listens on `127.0.0.1:8080` by default:
 
@@ -46,6 +45,28 @@ curl http://127.0.0.1:8080/healthz
 `DESKFLEET_BIND_ADDR` sets the listener's IP and port, and `RUST_LOG` configures
 logging. See [server configuration](apps/server/README.md) and
 [native binding development](crates/node/README.md).
+
+## Daemon
+
+The pnpm workspace contains `@deskfleet/daemon` in `apps/daemon` and
+`@deskfleet/native` in `crates/node`. Start the daemon from source with:
+
+```sh
+mise run daemon:dev
+```
+
+It runs in the foreground and prints its loopback health address. Build and test
+the standalone executable with:
+
+```sh
+mise run daemon:pack
+mise run daemon:smoke
+```
+
+The executable is `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows).
+See the [daemon guide](apps/daemon/README.md) for CLI options and platform support.
+
+## Checks
 
 Run the workspace checks with:
 

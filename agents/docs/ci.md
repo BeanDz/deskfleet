@@ -11,18 +11,27 @@ a stable `Gate` result for branch protection.
   results in `Gate`. Configure `Gate` under the `CI` workflow as the required
   status check in repository branch protection.
 - `.github/workflows/test.yml` runs static checks once on Linux with
-  `mise run ci:check:static`, plus Rust tests on Linux, macOS, and Windows with
-  `mise run check:rust-tests`. It supports reusable calls and manual runs.
+  `mise run ci:check:static`, plus Rust and TypeScript daemon tests on Linux,
+  macOS, and Windows with `mise run test`. It supports reusable calls and manual
+  runs.
 - `.github/workflows/build.yml` builds release artifacts using `mise run build`.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
-  native platform matrix. Artifacts contain the server and native library. This
-  workflow also supports reusable calls and manual runs.
-- `.github/actions/setup-build/action.yml` provides locked mise installation and
-  shared Rust compiler/dependency cache setup for both reusable workflows.
+  platform matrix. Each target packages and verifies the standalone SEA daemon.
+  It supports reusable calls and manual runs.
+- `.github/actions/setup-build/action.yml` installs locked tools and dependencies
+  and configures shared caches for both reusable workflows.
+
+The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each archive
+contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
+
+Smoke tests copy the daemon executable alone to an unrelated temporary directory,
+clear Node's environment overrides and PATH, then check native information,
+startup, and the health endpoint. Unix tests also require clean signal-driven
+shutdown; Windows tests terminate the process forcibly.
 
 ## Documentation-only changes
 
-Static validation still runs for documentation changes. The independent native
+Static validation still runs for documentation changes. The independent runtime
 test and build jobs can be skipped only when the complete change is ordinary
 documentation under the classifier's explicit allowlist.
 
@@ -38,13 +47,17 @@ or unexpectedly skipped required work fails the gate.
 
 ## Toolchains and caches
 
-CI installs tools with `mise install --locked` and uses locked Cargo dependencies.
+CI installs tools with `mise install --locked`, uses locked Cargo dependencies,
+and installs the pnpm workspace with `--frozen-lockfile`.
 Task definitions live in `mise.toml`; the workflows select tasks and execution
 platforms instead of maintaining another set of validation commands.
 
 Static and test jobs may restore the Cargo target cache. Build jobs use Cargo
 download caches without restoring compiled targets. The setup action populates
 download caches before saving them.
+
+The pnpm store is restored before installation and saved after installation on
+main or tags. Installed `node_modules` directories are rebuilt from the lockfile.
 
 All jobs use a pinned sccache release and share its GitHub Actions cache namespace.
 Main and tag runs can write that cache; pull requests and other branches read it.
@@ -59,7 +72,8 @@ policy, with Cargo target caches saved from main only.
 mise install --locked
 mise run check
 mise run build
+mise run daemon:smoke
 ```
 
 These commands validate the current host. Hosted runners provide the other
-operating systems and native architectures in the build matrix.
+supported operating systems and native architectures.

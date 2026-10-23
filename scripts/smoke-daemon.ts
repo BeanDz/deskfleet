@@ -1,0 +1,72 @@
+import assert from "node:assert/strict"
+import { execFileSync, spawn } from "node:child_process"
+import { once } from "node:events"
+import { chmodSync, copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { createInterface } from "node:readline"
+import { fileURLToPath } from "node:url"
+
+const root = fileURLToPath(new URL("../", import.meta.url))
+const output = join(root, "apps/daemon/dist")
+const directory = mkdtempSync(join(tmpdir(), "deskfleet-smoke-"))
+const executableName = process.platform === "win32" ? "deskfleet-daemon.exe" : "deskfleet-daemon"
+const command = join(directory, executableName)
+const environment = { ...process.env }
+for (const key of Object.keys(environment)) {
+  if (/^(PATH|NODE_PATH|NODE_OPTIONS)$/iu.test(key)) delete environment[key]
+}
+environment.PATH = ""
+
+try {
+  copyFileSync(join(output, executableName), command)
+  chmodSync(command, 0o755)
+
+  const version = (JSON.parse(readFileSync(join(root, "apps/daemon/package.json"), "utf8")) as { version: string }).version
+  const expectedNative = {
+    version,
+    os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
+    arch: process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch,
+  }
+  const info = JSON.parse(execFileSync(command, ["--info"], {
+    cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+  })) as { native: typeof expectedNative; runtime: { node: string; sea: boolean } }
+  assert.deepEqual(info.native, expectedNative)
+  assert.equal(info.runtime.sea, true)
+  assert.equal(info.runtime.node, process.versions.node)
+
+  const child = spawn(command, ["--port", "0"], {
+    cwd: directory, env: environment, stdio: ["ignore", "pipe", "pipe"],
+  })
+  let diagnostics = ""
+  child.stderr.setEncoding("utf8").on("data", chunk => { diagnostics += chunk })
+  const timeout = AbortSignal.timeout(15_000)
+  const closed = once(child, "close")
+  const deadline = once(timeout, "abort").then(() => { throw new Error("Daemon smoke test timed out") })
+  const lines = createInterface({ input: child.stdout })
+  try {
+    const ready = await Promise.race([
+      once(lines, "line").then(([line]) => JSON.parse(line as string) as { event: string; address: string }),
+      closed.then(() => { throw new Error(`Daemon exited before readiness: ${diagnostics}`) }),
+      deadline,
+    ])
+    assert.equal(ready.event, "ready")
+    assert.match(ready.address, /^http:\/\/127\.0\.0\.1:\d+$/u)
+    const response = await fetch(`${ready.address}/healthz`, { signal: timeout })
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { status: "ok", native: expectedNative })
+    child.kill("SIGTERM")
+    const [code, signal] = await Promise.race([closed, deadline])
+    if (process.platform !== "win32") {
+      assert.equal(code, 0, diagnostics)
+      assert.equal(signal, null, diagnostics)
+    }
+  } finally {
+    lines.close()
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+    await closed.catch(() => {})
+  }
+  console.log("Standalone SEA: native bridge, readiness, health, and shutdown passed")
+} finally {
+  rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}

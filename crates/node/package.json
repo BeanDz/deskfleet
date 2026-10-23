@@ -1,0 +1,22 @@
+{
+  "name": "@deskfleet/native",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./bindings.d.ts",
+      "default": "./index.ts"
+    }
+  },
+  "scripts": {
+    "build": "napi build --release --no-js --dts bindings.d.ts -- --locked",
+    "build:debug": "napi build --no-js --dts bindings.d.ts -- --locked"
+  },
+  "napi": {
+    "binaryName": "deskfleet"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.10.9"
+  }
+}

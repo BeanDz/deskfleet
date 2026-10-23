@@ -1,0 +1,6 @@
+packages:
+  - apps/daemon
+  - crates/node
+
+allowBuilds:
+  esbuild: true

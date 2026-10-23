@@ -1,5 +1,5 @@
 name: Setup deskfleet build
-description: Install locked tools and restore shared Cargo and compiler caches.
+description: Install locked tools and dependencies with shared build caches.
 
 inputs:
   github-token:
@@ -22,6 +22,32 @@ runs:
         cache: true
         cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}
         github_token: ${{ inputs.github-token }}
+
+    - name: Locate pnpm store
+      id: pnpm-store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore pnpm store
+      id: pnpm-cache
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}
+        restore-keys: pnpm-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Install workspace dependencies
+      shell: bash
+      run: mise run install
+
+    - name: Save pnpm store
+      if: >-
+        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+        steps.pnpm-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
     - name: Restore Cargo build cache
       if: inputs.cache-rust-build == 'true'

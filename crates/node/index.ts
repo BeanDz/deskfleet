@@ -1,0 +1,48 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { getAsset, isSea } from "node:sea"
+import type { NativeInfo } from "./bindings.d.ts"
+
+export type { NativeInfo } from "./bindings.d.ts"
+
+type Bindings = typeof import("./bindings.d.ts")
+let bindings: Bindings | undefined
+
+function loadBindings(): Bindings {
+  const addon = { exports: {} as Bindings }
+  if (!isSea()) {
+    process.dlopen(addon, join(import.meta.dirname, "deskfleet.node"))
+    return addon.exports
+  }
+
+  const asset = Buffer.from(getAsset("deskfleet.node"))
+  const directory = mkdtempSync(join(tmpdir(), "deskfleet-native-"))
+  const filename = join(directory, "deskfleet.node")
+  try {
+    writeFileSync(filename, asset, { flag: "wx", mode: 0o600 })
+    process.dlopen(addon, filename)
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true })
+    throw error
+  }
+
+  if (process.platform === "win32") {
+    process.once("exit", () => {
+      try {
+        rmSync(directory, { recursive: true, force: true })
+      } catch (error) {
+        // Windows can keep the DLL mapped until process teardown completes.
+        const code = (error as NodeJS.ErrnoException).code
+        if (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") throw error
+      }
+    })
+  } else {
+    rmSync(directory, { recursive: true, force: true })
+  }
+  return addon.exports
+}
+
+export function nativeInfo(): NativeInfo {
+  return (bindings ??= loadBindings()).nativeInfo()
+}
