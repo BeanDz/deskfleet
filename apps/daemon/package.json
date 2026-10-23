@@ -5,6 +5,8 @@
   "type": "module",
   "license": "Apache-2.0",
   "dependencies": {
+    "@agentclientprotocol/codex-acp": "2.2.2",
+    "@agentclientprotocol/sdk": "2.0.1",
     "@deskfleet/native": "workspace:*"
   }
 }

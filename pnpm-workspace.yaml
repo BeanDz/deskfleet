@@ -4,3 +4,6 @@ packages:
 
 allowBuilds:
   esbuild: true
+
+minimumReleaseAgeExclude:
+  - '@agentclientprotocol/sdk@2.0.1'

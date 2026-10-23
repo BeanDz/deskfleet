@@ -2,6 +2,7 @@ import { isSea } from "node:sea"
 import { parseArgs } from "node:util"
 import { nativeInfo } from "@deskfleet/native"
 import { startDaemon } from "./daemon.ts"
+import { runAgent } from "./agent-cli.ts"
 
 function fail(error: unknown) {
   console.error(error instanceof Error ? error.message : String(error))
@@ -9,6 +10,15 @@ function fail(error: unknown) {
 }
 
 async function main() {
+  if (process.argv[2] === "--codex-acp") {
+    process.env.CODEX_PATH ||= "codex"
+    await import("@agentclientprotocol/codex-acp")
+    return
+  }
+  if (process.argv[2] === "agent") {
+    await runAgent(process.argv.slice(3))
+    return
+  }
   const { values } = parseArgs({
     options: {
       info: { type: "boolean" },
@@ -18,6 +28,7 @@ async function main() {
   })
   if (values.help) {
     console.log("Usage: deskfleet-daemon [--port <0-65535>] [--info] [--help]")
+    console.log("       deskfleet-daemon agent codex --help")
     return
   }
   if (values.info) {

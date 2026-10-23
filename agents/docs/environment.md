@@ -60,6 +60,12 @@ a package manifest, run `mise exec -- pnpm install` and include the lockfile in
 the change. See the [daemon guide](../../apps/daemon/README.md) for packaging and
 runtime commands.
 
+The ACP SDK and Codex adapter are pinned daemon dependencies in pnpm. The SEA
+build embeds the adapter; running Codex sessions still requires an installed,
+authenticated Codex CLI. Use `--binary-path` to select it and repeated `--env`
+options for environment overrides. See the [Codex setup](../../apps/daemon/README.md#codex-through-acp)
+for initialization checks and prompt commands.
+
 ## Agent skills
 
 APM installs `rust-skills`, `stop-that-shit`, and `stss` from the commit references

@@ -22,9 +22,12 @@ try {
   copyFileSync(join(output, executableName), command)
   chmodSync(command, 0o755)
 
-  const version = (JSON.parse(readFileSync(join(root, "apps/daemon/package.json"), "utf8")) as { version: string }).version
+  const manifest = JSON.parse(readFileSync(join(root, "apps/daemon/package.json"), "utf8")) as {
+    version: string
+    dependencies: Record<string, string>
+  }
   const expectedNative = {
-    version,
+    version: manifest.version,
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
     arch: process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch,
   }
@@ -34,6 +37,11 @@ try {
   assert.deepEqual(info.native, expectedNative)
   assert.equal(info.runtime.sea, true)
   assert.equal(info.runtime.node, process.versions.node)
+
+  const adapterVersion = execFileSync(command, ["--codex-acp", "--version"], {
+    cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+  }).trim()
+  assert.equal(adapterVersion, `@agentclientprotocol/codex-acp ${manifest.dependencies["@agentclientprotocol/codex-acp"]}`)
 
   const child = spawn(command, ["--port", "0"], {
     cwd: directory, env: environment, stdio: ["ignore", "pipe", "pipe"],
@@ -66,7 +74,7 @@ try {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
     await closed.catch(() => {})
   }
-  console.log("Standalone SEA: native bridge, readiness, health, and shutdown passed")
+  console.log("Standalone SEA: native bridge, bundled ACP adapter, readiness, health, and shutdown passed")
 } finally {
   rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

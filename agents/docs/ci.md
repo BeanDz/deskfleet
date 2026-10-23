@@ -26,8 +26,8 @@ contains `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
 
 Smoke tests copy the daemon executable alone to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,
-startup, and the health endpoint. Unix tests also require clean signal-driven
-shutdown; Windows tests terminate the process forcibly.
+the bundled ACP adapter, startup, and the health endpoint. Unix tests also require
+clean signal-driven shutdown; Windows tests terminate the process forcibly.
 
 ## Documentation-only changes
 

@@ -12,7 +12,8 @@ The independent TypeScript daemon calls Rust through napi-rs and packages as a
 Node.js Single Executable Application (SEA). An Electron client is planned.
 
 The current implementation includes resource types, the server's `GET /healthz`,
-and a daemon with native platform information and a local health endpoint.
+and a daemon with native platform information, a local health endpoint, and
+Codex CLI sessions over ACP.
 
 ## Rust workspace
 
@@ -64,7 +65,9 @@ mise run daemon:smoke
 ```
 
 The executable is `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows).
-See the [daemon guide](apps/daemon/README.md) for CLI options and platform support.
+It also runs single-turn Codex sessions using the installed Codex CLI and an
+embedded ACP adapter. See the [daemon guide](apps/daemon/README.md) for agent
+configuration, CLI options, and platform support.
 
 ## Checks
 

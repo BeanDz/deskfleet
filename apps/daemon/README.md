@@ -1,8 +1,8 @@
 # deskfleet daemon
 
 `@deskfleet/daemon` is a foreground TypeScript process that runs independently of
-the desktop app. The current entry point loads `@deskfleet/native`, reports
-native platform information, and serves a loopback health endpoint.
+the desktop app. It reports native platform information, serves a loopback health
+endpoint, and runs Codex CLI sessions over ACP.
 
 ## Development
 
@@ -32,6 +32,47 @@ mise exec -- node apps/daemon/src/main.ts --port 8081
 ```
 
 On Unix, SIGINT and SIGTERM close the listener and exit cleanly.
+
+## Codex through ACP
+
+The daemon uses the [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp)
+to connect the installed Codex CLI to ACP. The adapter is a pinned pnpm dependency
+and ships inside the SEA executable. Install and authenticate Codex CLI before
+sending prompts; the daemon uses that CLI's credentials.
+
+After `mise run install`, check ACP initialization or run one prompt from source:
+
+```sh
+mise exec -- node apps/daemon/src/main.ts agent codex --check
+mise exec -- node apps/daemon/src/main.ts agent codex --cwd /path/to/repository --prompt 'Explain this repository'
+```
+
+`--check` initializes ACP and exits without creating a session or sending a
+prompt. A prompt invocation creates one ACP session, prints newline-delimited
+JSON events for initialization, session creation, updates, and the stop reason,
+then closes the connection. On Unix, SIGINT cancels the active prompt.
+
+Agent configuration uses these common options:
+
+| Option | Meaning |
+| --- | --- |
+| `--name <label>` | User-facing label, defaulting to `Codex`, separate from the `codex` provider ID |
+| `--binary-path <executable>` | Codex CLI executable; omitted or empty uses `codex` on PATH |
+| `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
+
+The selected binary path takes precedence over `CODEX_PATH` in the environment.
+`--cwd` sets the ACP session's working directory and defaults to the current
+directory. The returned `sessionId` is the provider's session ID; this command
+does not register a deskfleet Worktree or AgentSession.
+
+The CLI cancels permission requests and emits `permission_cancelled` events.
+It has no approval UI; prompts requiring approval cannot proceed through it.
+
+The packaged executable accepts the same arguments:
+
+```sh
+./apps/daemon/dist/deskfleet-daemon agent codex --check
+```
 
 ## Standalone executable
 

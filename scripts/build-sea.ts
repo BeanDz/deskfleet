@@ -19,7 +19,11 @@ await build({
   platform: "node",
   format: "cjs",
   target: "node24",
-  define: { "import.meta.dirname": "__dirname" },
+  define: {
+    "import.meta.dirname": "__dirname",
+    "import.meta.url": "__deskfleet_module_url",
+  },
+  banner: { js: "const __deskfleet_module_url = require('node:url').pathToFileURL(__filename).href;" },
 })
 
 const config = join(output, "sea-config.json")

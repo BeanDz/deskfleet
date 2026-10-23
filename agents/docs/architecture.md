@@ -7,7 +7,8 @@ and access terminals or desktops on the machine doing the work.
 This document describes the planned system. The current implementation contains
 the Rust resource model, an Actix Web liveness endpoint, and an independent
 TypeScript daemon calling a napi-rs addon. The daemon runs from source or a SEA
-executable and exposes native information and a local health endpoint.
+executable, exposes native information and a local health endpoint, and runs
+Codex CLI sessions through ACP.
 
 ## Components
 
@@ -108,8 +109,24 @@ and directory bindings; later edits to the worktree must not silently retarget a
 running session. Additional directories are exposed through the provider's
 supported configuration or tools.
 
+The first provider connects Codex CLI through the bundled
+[Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The shared
+`AgentProvider` interface accepts a user-facing name, an optional binary path,
+and environment overrides. Provider-specific code selects the process; the
+[ACP TypeScript SDK](https://agentclientprotocol.com/libraries/typescript) handles
+initialization, session creation, prompts, cancellation, and session updates.
+Codex uses the installed CLI and its credentials. The adapter runs as a child
+process; the SEA executable reuses its bundled Node runtime.
+
+The current agent CLI creates one ACP session per prompt invocation. Its cwd and
+provider session ID remain distinct from deskfleet's Worktree and AgentSession
+resources. It forwards ACP updates without converting them into a history schema.
+Permission requests require a client callback; without one they are cancelled.
+The CLI cancels them explicitly. The client advertises no filesystem or terminal
+capabilities.
+
 ACP capability negotiation determines which operations an adapter supports.
-Codex, Claude Code, Pi, and Cursor CLI are integration candidates. Managed
+Claude Code, Pi, and Cursor CLI are further integration candidates. Managed
 sessions, imported history, resumed sessions, and attachment to an existing CLI
 process are distinct capabilities. ACP alone does not guarantee live attachment;
 a tmux connection can expose the CLI without providing structured ACP control.
@@ -239,8 +256,9 @@ and [agent guide](../../AGENTS.md) for repository conventions.
 
 ## Next milestone
 
-The daemon/native packaging boundary is implemented. Next integrate two ACP
-providers and authenticated WebRTC with direct and TURN-relayed terminal access.
+Daemon/native packaging and the first ACP provider are implemented. Next add a
+second ACP provider and authenticated WebRTC with direct and TURN-relayed terminal
+access.
 
 Then complete one workflow: enroll a headless machine, register a workspace and
 a worktree spanning frontend/backend directories, run an agent, inspect its Git
