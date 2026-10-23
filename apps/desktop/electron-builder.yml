@@ -1,0 +1,47 @@
+appId: io.github.yet-another-ai.deskfleet
+# productName and the version come from package.json.
+executableName: deskfleet
+asar: true
+# Vite bundles every renderer and main-process dependency into out/.
+npmRebuild: false
+# Fuses and ASAR integrity harden loading but do not replace platform code signing.
+electronFuses:
+  # Flipping fuses changes executable pages. Unsigned Apple Silicon builds need
+  # a fresh ad-hoc signature or macOS terminates them with CODESIGNING/Invalid Page.
+  resetAdHocDarwinSignature: true
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+
+directories:
+  output: release
+
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
+files:
+  - out/**/*
+  - "!out/**/*.map"
+  # Runtime window and tray images; build/ is otherwise packaging input only.
+  - build/icon.png
+  - build/tray*.png
+  - package.json
+
+mac:
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+
+linux:
+  category: Development
+  target:
+    - AppImage

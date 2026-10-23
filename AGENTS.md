@@ -16,8 +16,8 @@ product website and user manual.
 - The central backend is open-source Rust using Actix Web. Native capabilities
   live in Rust libraries, exposed through thin napi-rs bindings.
 - The machine daemon is an independent TypeScript/Node.js SEA process that works
-  on headless machines. The planned Electron app is a client; closing it must
-  not own the daemon's lifetime.
+  on headless machines. The Electron app is a client; quitting it must not own
+  the daemon's lifetime.
 - ACP connects agent implementations. WebRTC carries peer data and media, with
   server-assisted signaling and TURN fallback.
 - `PROTOCOL_VERSION` remains `1` until maintainers explicitly declare the first

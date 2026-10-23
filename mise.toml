@@ -24,8 +24,8 @@ description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
 
 [tasks.check]
-description = "Run TypeScript and Rust checks, tests, and a debug build"
-depends = ["check:static", "test", "rust:build"]
+description = "Run TypeScript and Rust checks, tests, and debug builds"
+depends = ["check:static", "test", "rust:build", "desktop:build"]
 
 [tasks."check-fast"]
 description = "Run the Rust edit-loop checks"
@@ -44,8 +44,8 @@ description = "Check Rust dependencies and Clippy diagnostics"
 depends = ["rust:shear", "rust:clippy"]
 
 [tasks.test]
-description = "Run script, daemon, and Rust tests"
-depends = ["check:scripts", "check:daemon", "check:rust-tests"]
+description = "Run script, daemon, desktop, and Rust tests"
+depends = ["check:scripts", "check:daemon", "check:desktop", "check:rust-tests"]
 
 [tasks.build]
 description = "Build the release server and standalone daemon"
@@ -79,6 +79,26 @@ run = "node scripts/build-sea.ts"
 [tasks."daemon:smoke"]
 description = "Verify an isolated SEA executable without an installed Node.js"
 run = "node scripts/smoke-daemon.ts"
+
+[tasks."desktop:dev"]
+description = "Run the Electron desktop app with Vite watchers"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/desktop dev"
+
+[tasks."desktop:build"]
+description = "Build the Electron main, preload, and renderer bundles"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/desktop build"
+
+[tasks."desktop:package"]
+description = "Package the desktop app as installers for the host platform"
+depends = ["desktop:build"]
+run = "pnpm --filter @deskfleet/desktop run package"
+
+[tasks."desktop:package:dir"]
+description = "Package the desktop app as an unpacked directory for the host platform"
+depends = ["desktop:build"]
+run = "pnpm --filter @deskfleet/desktop run package:dir"
 
 [tasks."rust:format"]
 hide = true
@@ -114,17 +134,27 @@ run = "node scripts/check-rust-skills-harness.ts"
 
 [tasks."check:static"]
 hide = true
-depends = ["check:rust-skills-harness", "check:types", "rust:format:check", "rust:shear", "rust:clippy"]
+depends = ["check:rust-skills-harness", "check:types", "check:desktop-types", "rust:format:check", "rust:shear", "rust:clippy"]
 
 [tasks."check:types"]
 hide = true
 depends = ["native:debug"]
 run = "pnpm typecheck"
 
+[tasks."check:desktop-types"]
+hide = true
+depends = ["install"]
+run = "pnpm --filter @deskfleet/desktop typecheck"
+
 [tasks."check:daemon"]
 hide = true
 depends = ["native:debug"]
 run = "node --test apps/daemon/src/*.test.ts"
+
+[tasks."check:desktop"]
+hide = true
+depends = ["install"]
+run = "pnpm --filter @deskfleet/desktop test"
 
 [tasks."check:scripts"]
 hide = true
@@ -137,7 +167,7 @@ depends = ["rust:test"]
 
 [tasks."ci:check:static"]
 hide = true
-depends = ["check:static", "check:scripts"]
+depends = ["check:static", "check:scripts", "desktop:build"]
 
 [tasks."ci:report:sccache"]
 hide = true

@@ -1,0 +1,99 @@
+{
+  "common": {
+    "notAvailable": "Not available yet",
+    "placeholderControl": "{label} (not available yet)"
+  },
+  "toolbar": {
+    "showSidebar": "Show sidebar",
+    "hideSidebar": "Hide sidebar",
+    "back": "Back",
+    "forward": "Forward",
+    "showPanel": "Show details panel",
+    "hidePanel": "Hide details panel"
+  },
+  "nav": {
+    "label": "Navigation",
+    "newSession": "New session",
+    "settings": "Settings",
+    "team": "Switch team"
+  },
+  "machine": {
+    "offline": "Offline",
+    "lastSeen": "Last seen {time}",
+    "local": "This machine",
+    "addWorkspace": "Add workspace",
+    "noWorkspaces": "No workspaces",
+    "remoteDesktop": "Remote desktop"
+  },
+  "newSession": {
+    "heading": "Start an agent session",
+    "noTarget": "Choose a worktree to start a session in."
+  },
+  "worktree": {
+    "notFound": "This worktree does not exist.",
+    "directories": "Directories",
+    "sessions": "Agent sessions",
+    "noSessions": "No agent sessions yet.",
+    "newSession": "New session",
+    "terminals": "Terminals",
+    "noTerminals": "No terminals."
+  },
+  "session": {
+    "notFound": "This session does not exist.",
+    "historyUnavailable": "Session history is not available yet."
+  },
+  "composer": {
+    "label": "Prompt",
+    "placeholder": "Describe a task for the agent",
+    "provider": "Agent provider",
+    "send": "Send"
+  },
+  "terminal": {
+    "new": "New terminal",
+    "notFound": "This terminal does not exist.",
+    "unavailable": "Terminal access is not available yet."
+  },
+  "desktop": {
+    "notFound": "This machine does not exist.",
+    "unavailable": "Remote desktop is not available yet.",
+    "offline": "{machine} is offline.",
+    "noDisplay": "{machine} has no display to share.",
+    "connect": "Connect"
+  },
+  "panel": {
+    "label": "Details",
+    "details": "Details",
+    "changes": "Changes",
+    "nothingSelected": "Select a worktree, session, terminal, or desktop to see its details.",
+    "noWorktree": "Changes are shown for resources in a worktree.",
+    "machine": "Machine",
+    "workspace": "Workspace",
+    "worktree": "Worktree",
+    "provider": "Provider",
+    "cwd": "Working directory",
+    "status": "Status",
+    "online": "Online",
+    "scope": "Scope",
+    "scopeMachine": "Machine",
+    "scopeWorkspace": "Workspace",
+    "scopeWorktree": "Worktree",
+    "directories": "Directories",
+    "display": "Display",
+    "displayAvailable": "Available",
+    "displayNone": "Headless",
+    "notGit": "Not a Git checkout",
+    "clean": "No changes",
+    "diffUnavailable": "Diffs are not available yet.",
+    "changeStatus": {
+      "modified": "Modified",
+      "added": "Added",
+      "deleted": "Deleted",
+      "renamed": "Renamed",
+      "untracked": "Untracked"
+    }
+  },
+  "tray": {
+    "show": "Show deskfleet",
+    "quit": "Quit deskfleet"
+  }
+}

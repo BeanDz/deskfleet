@@ -1,8 +1,11 @@
 packages:
   - apps/daemon
+  - apps/desktop
   - crates/node
 
 allowBuilds:
+  # Squirrel.Windows support; electron-builder's NSIS target does not use it.
+  electron-winstaller: false
   esbuild: true
 
 minimumReleaseAgeExclude:

@@ -9,11 +9,11 @@ alongside sessions, and agents coordinate across machines through MCP tools.
 
 The project is a Rust and TypeScript monorepo. The central backend uses Actix Web.
 The independent TypeScript daemon calls Rust through napi-rs and packages as a
-Node.js Single Executable Application (SEA). An Electron client is planned.
+Node.js Single Executable Application (SEA). The Electron client uses Vue.
 
 The current implementation includes resource types, the server's `GET /healthz`,
-and a daemon with native platform information, a local health endpoint, and
-Codex CLI sessions over ACP.
+a daemon with native platform information, a local health endpoint, and
+Codex CLI sessions over ACP, and an initial Electron client shell.
 
 ## Rust workspace
 
@@ -68,6 +68,19 @@ The executable is `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows).
 It also runs single-turn Codex sessions using the installed Codex CLI and an
 embedded ACP adapter. See the [daemon guide](apps/daemon/README.md) for agent
 configuration, CLI options, and platform support.
+
+## Desktop app
+
+`@deskfleet/desktop` in `apps/desktop` is the Electron client. Start it with hot
+reload using:
+
+```sh
+mise run desktop:dev
+```
+
+Closing the window keeps the app in the system tray. Use the tray menu to quit;
+the daemon keeps running. See the [desktop guide](apps/desktop/README.md) for
+development and packaging details.
 
 ## Checks
 

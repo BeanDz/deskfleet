@@ -8,7 +8,8 @@ This document describes the planned system. The current implementation contains
 the Rust resource model, an Actix Web liveness endpoint, and an independent
 TypeScript daemon calling a napi-rs addon. The daemon runs from source or a SEA
 executable, exposes native information and a local health endpoint, and runs
-Codex CLI sessions through ACP.
+Codex CLI sessions through ACP. The Electron client is an initial Vue shell with
+a sandboxed renderer and a tray icon.
 
 ## Components
 
@@ -102,6 +103,11 @@ The daemon runs independently of Electron, normally as the OS user whose files,
 credentials, and tools the agents use. Closing the app or losing a connection
 must leave ongoing work running. Local clients connect over authenticated IPC,
 such as a Unix-domain socket or Windows named pipe.
+
+The desktop client stays resident in the system tray (the macOS menu bar or the
+Windows notification area). Closing its window or using an ordinary quit command
+hides it. The tray menu, OS session end, or a termination signal exits the client
+process.
 
 The daemon is the ACP client and owns local agent processes or adapter
 connections. Each AgentSession belongs to a worktree. Startup records the cwd
@@ -242,9 +248,9 @@ The Rust workspace has five crates:
 
 Dependencies flow `server -> protocol -> model`, `node -> native`, and
 `@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace currently contains
-the daemon and native package. TypeScript wire types should derive from the same
-authoritative contracts as Rust; napi declarations describe the native API
-separately.
+the daemon, the desktop client, and the native package. TypeScript wire types
+should derive from the same authoritative contracts as Rust; napi declarations
+describe the native API separately.
 
 `PROTOCOL_VERSION` stays at `1` until the first freeze is explicitly declared.
 Contracts evolve in place, including incompatible changes. Do not add version
@@ -268,7 +274,7 @@ synchronized history remains available while the machine is offline.
 
 MCP coordination and desktop control follow that workflow. Remaining choices
 include the WebRTC library, provider distribution, terminal/capture backends,
-persistence schema, and client UI framework.
+and persistence schema.
 
 ## References
 

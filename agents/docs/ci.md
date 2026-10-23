@@ -10,10 +10,10 @@ a stable `Gate` result for branch protection.
   runs. It classifies the changed files, calls Test and Build, and combines their
   results in `Gate`. Configure `Gate` under the `CI` workflow as the required
   status check in repository branch protection.
-- `.github/workflows/test.yml` runs static checks once on Linux with
-  `mise run ci:check:static`, plus Rust and TypeScript daemon tests on Linux,
-  macOS, and Windows with `mise run test`. It supports reusable calls and manual
-  runs.
+- `.github/workflows/test.yml` runs static checks and the desktop bundle build
+  once on Linux with `mise run ci:check:static`, plus Rust, daemon, and desktop
+  tests on Linux, macOS, and Windows with `mise run test`. It supports reusable
+  calls and manual runs.
 - `.github/workflows/build.yml` builds release artifacts using `mise run build`.
   Pull requests use a Linux x64 smoke build; main and manual runs use the full
   platform matrix. Each target packages and verifies the standalone SEA daemon.

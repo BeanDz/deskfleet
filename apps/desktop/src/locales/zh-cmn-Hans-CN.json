@@ -1,0 +1,99 @@
+{
+  "common": {
+    "notAvailable": "尚不可用",
+    "placeholderControl": "{label}（尚不可用）"
+  },
+  "toolbar": {
+    "showSidebar": "显示侧边栏",
+    "hideSidebar": "隐藏侧边栏",
+    "back": "后退",
+    "forward": "前进",
+    "showPanel": "显示详情面板",
+    "hidePanel": "隐藏详情面板"
+  },
+  "nav": {
+    "label": "导航",
+    "newSession": "新会话",
+    "settings": "设置",
+    "team": "切换团队"
+  },
+  "machine": {
+    "offline": "离线",
+    "lastSeen": "最后在线：{time}",
+    "local": "本机",
+    "addWorkspace": "添加工作区",
+    "noWorkspaces": "没有工作区",
+    "remoteDesktop": "远程桌面"
+  },
+  "newSession": {
+    "heading": "开始智能体会话",
+    "noTarget": "选择要在其中启动会话的工作树。"
+  },
+  "worktree": {
+    "notFound": "该工作树不存在。",
+    "directories": "目录",
+    "sessions": "智能体会话",
+    "noSessions": "还没有智能体会话。",
+    "newSession": "新会话",
+    "terminals": "终端",
+    "noTerminals": "没有终端。"
+  },
+  "session": {
+    "notFound": "该会话不存在。",
+    "historyUnavailable": "会话记录尚不可用。"
+  },
+  "composer": {
+    "label": "提示词",
+    "placeholder": "描述要交给智能体的任务",
+    "provider": "智能体提供方",
+    "send": "发送"
+  },
+  "terminal": {
+    "new": "新建终端",
+    "notFound": "该终端不存在。",
+    "unavailable": "终端访问尚不可用。"
+  },
+  "desktop": {
+    "notFound": "该机器不存在。",
+    "unavailable": "远程桌面尚不可用。",
+    "offline": "{machine} 已离线。",
+    "noDisplay": "{machine} 没有可共享的显示器。",
+    "connect": "连接"
+  },
+  "panel": {
+    "label": "详情",
+    "details": "详情",
+    "changes": "变更",
+    "nothingSelected": "选择工作树、会话、终端或桌面以查看详情。",
+    "noWorktree": "仅显示工作树中资源的变更。",
+    "machine": "机器",
+    "workspace": "工作区",
+    "worktree": "工作树",
+    "provider": "提供方",
+    "cwd": "工作目录",
+    "status": "状态",
+    "online": "在线",
+    "scope": "所属范围",
+    "scopeMachine": "机器",
+    "scopeWorkspace": "工作区",
+    "scopeWorktree": "工作树",
+    "directories": "目录",
+    "display": "显示器",
+    "displayAvailable": "可用",
+    "displayNone": "无界面",
+    "notGit": "不是 Git 检出",
+    "clean": "没有变更",
+    "diffUnavailable": "差异尚不可用。",
+    "changeStatus": {
+      "modified": "已修改",
+      "added": "已添加",
+      "deleted": "已删除",
+      "renamed": "已重命名",
+      "untracked": "未跟踪"
+    }
+  },
+  "tray": {
+    "show": "显示 deskfleet",
+    "quit": "退出 deskfleet"
+  }
+}
