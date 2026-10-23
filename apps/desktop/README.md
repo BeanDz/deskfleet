@@ -191,6 +191,14 @@ directory. There is no separate Node.js or daemon installation to configure.
 The background process has no window, tray icon, or client single-instance lock.
 Its Chromium data is separate from the client's profile.
 
+On macOS, a newly started Agent immediately requests screen/system-audio recording
+access. Settings shows a permission notice while access is pending, denied, or
+unavailable; granted access has no notice. The Agent's running status stays
+separate. If access was previously denied, enable it in System Settings → Privacy
+& Security → Screen & System Audio Recording, then turn the local Agent off and
+on. Waiting for consent or denying it leaves terminals and other Agent work
+available. Reusing an already running Agent does not repeat the request.
+
 Turning the switch off requests authenticated daemon shutdown, including active
 terminal processes, and waits for cleanup. Workspace data and terminal history
 remain on disk. Turning it back on reconnects the UI to the new daemon. A failed

@@ -89,7 +89,7 @@ try {
   await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath)])
   await Promise.all([mkdir(checkoutPath), mkdir(initialPath), mkdir(updatedPath)])
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/catalog-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" })
-  daemon = await startDaemon(0, { controlDirectory })
+  daemon = await startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => null })
   const created = await launchClient("create")
   assert.ok(created.terminalId)
   await verifyShellDirectory(created.terminalId)

@@ -49,6 +49,23 @@ video encoders. `captureDisplays()`, `supportedVideoCodecs()`, and
 `startDesktop()` are explicit operations. Capture requires an interactive
 graphical session and any platform recording permission.
 
+On macOS, the daemon requests Screen Recording consent as soon as startup owns
+discovery and local IPC is ready. `requestScreenCaptureAccess()` checks existing
+consent and requests it through CoreGraphics on a Rust worker; it does not start
+capture. This consent also covers the current ScreenCaptureKit system-audio
+stream. Waiting for or denying consent does not block agents, terminals, catalog
+operations, or daemon cleanup. Windows and Linux do not issue this request.
+
+The authenticated `hello` response includes `screenCapturePermission`, and
+`screenCapturePermissionChanged` events publish the result to connected clients.
+While the Agent runs, Desktop Settings shows pending, denied, or failed permission
+requests. Granted or unnecessary permissions have no notice; the Agent's running
+status stays separate.
+Previously denied access must be enabled in macOS System Settings under Privacy
+& Security → Screen & System Audio Recording; restart the local Agent afterward.
+Reconnecting a client reads the existing daemon's status without requesting again.
+Tests inject the permission request so ordinary test runs do not open OS dialogs.
+
 The native desktop pipeline owns capture and hardware encoding on one blocking
 worker, preserving D3D11 thread ownership and retained GPU surface lifetimes.
 Raw frames stay in Rust. Encoded packets enter a bounded queue of eight packets

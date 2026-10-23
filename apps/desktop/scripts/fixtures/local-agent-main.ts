@@ -13,7 +13,7 @@ import type { DeskfleetDesktopApi } from "../../src/shared/desktop-api.ts"
 
 export interface LocalAgentSmokeContext {
   phase: "start" | "reuse" | "disabled"
-  appPath: string
+  daemonAppPath: string
   rendererDirectory: string
   preloadPath: string
   profileDirectory: string
@@ -56,6 +56,13 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     [...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "Back to app")!.click()
     await until(() => !!settingsButton(), "Return from Settings")
   }
+  async function verifyDeniedPermission(): Promise<void> {
+    await until(() => !!document.querySelector('[data-screen-capture-permission="denied"]'), "Screen permission denial")
+    const state = await api.settings.get()
+    require(state.status === "running" && state.screenCapturePermission?.status === "denied", "Denied screen permission must leave the Agent running")
+    require([...document.querySelectorAll('main [role="status"]')].some(element => element.textContent?.trim() === "Running"), "Settings must show Running while screen access is denied")
+    require(document.querySelector('[data-screen-capture-permission="denied"]')!.getAttribute("role") === "alert", "Denied permission must be visible in Settings")
+  }
   async function change(enabled: boolean): Promise<void> {
     await openSettings()
     require(toggle()!.getAttribute("aria-checked") === String(!enabled), "Switch preference did not match the previous state")
@@ -66,6 +73,7 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
       return state.enabled === enabled && state.status === (enabled ? "running" : "stopped")
     }, enabled ? "Agent restart" : "Agent stop")
     await until(() => toggle()?.getAttribute("aria-checked") === String(enabled) && !toggle()!.disabled, "Saved Agent preference")
+    if (enabled) await verifyDeniedPermission()
     await leaveSettings()
     await until(() => enabled ? !!addWorkspace() && addWorkspace()!.getAttribute("aria-disabled") !== "true" : document.querySelector("aside")!.textContent!.includes("Offline"), "Catalog lifecycle refresh")
   }
@@ -83,6 +91,9 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   }
   require(initial.enabled && initial.status === "running", "Default/reused local Agent must be running")
   await until(() => !!addWorkspace() && addWorkspace()!.getAttribute("aria-disabled") !== "true", "Initial catalog connection")
+  await openSettings()
+  await verifyDeniedPermission()
+  await leaveSettings()
   if (context.phase === "reuse") {
     const workspace = (await api.catalog.list()).workspaces.find(value => value.id === context.workspaceId)
     require(workspace?.worktrees[0]?.directories[0]?.path === context.checkoutPath, "Workspace was not preserved after client exit")
@@ -120,7 +131,7 @@ registerRendererScheme()
 void app.whenReady().then(async () => {
   const controller = new LocalAgentController(
     join(app.getPath("userData"), "settings.json"),
-    createLocalAgentRuntime({ executable: process.execPath, appPath: context.appPath, packaged: false, directory: context.daemonDirectory }),
+    createLocalAgentRuntime({ executable: process.execPath, appPath: context.daemonAppPath, packaged: false, directory: context.daemonDirectory }),
     publishLocalAgentState,
   )
   installDesktopMediaIpc()

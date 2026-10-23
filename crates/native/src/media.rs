@@ -52,6 +52,17 @@ pub async fn displays() -> Result<Vec<Display>, MediaError> {
     Ok(tokio::task::spawn_blocking(deskfleet_capture::displays).await??)
 }
 
+/// Request capture permission on a worker without starting capture or encoders.
+///
+/// Returns `None` on platforms without an upfront permission request.
+///
+/// # Errors
+///
+/// Returns an error if the permission worker fails.
+pub async fn request_screen_capture_access() -> Result<Option<bool>, MediaError> {
+    Ok(tokio::task::spawn_blocking(deskfleet_capture::request_screen_capture_access).await?)
+}
+
 #[derive(Debug, Clone)]
 pub struct DesktopConfig {
     pub display_id: u32,

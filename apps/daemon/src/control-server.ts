@@ -13,6 +13,7 @@ import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { listDirectories } from "./filesystem.ts"
+import { ScreenCapturePermissions } from "./screen-capture-permission.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -48,6 +49,7 @@ class ControlConnection {
   readonly #capabilities: Capabilities
   readonly #terminals: TerminalSessions
   readonly #catalog: DaemonCatalog
+  readonly #permissions: ScreenCapturePermissions
   readonly #onShutdownRequested: (() => void) | undefined
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #dialed = new Set<string>()
@@ -55,13 +57,14 @@ class ControlConnection {
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: ScreenCapturePermissions, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
     this.#capabilities = capabilities
     this.#terminals = terminals
     this.#catalog = catalog
+    this.#permissions = permissions
     this.#onShutdownRequested = onShutdownRequested
     const unsubscribeTerminals = terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
@@ -70,7 +73,10 @@ class ControlConnection {
     const unsubscribeCatalog = catalog.onChange(event => {
       if (this.#authenticated) this.#send({ event })
     })
-    this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog() }
+    const unsubscribePermissions = permissions.onChange(permission => {
+      if (this.#authenticated) this.#send({ event: { kind: "screenCapturePermissionChanged", permission } })
+    })
+    this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog(); unsubscribePermissions() }
     socket.on("error", () => {})
     socket.once("close", () => { void this.close().catch(error => console.error("Desktop session cleanup failed", error)) })
   }
@@ -139,7 +145,11 @@ class ControlConnection {
       const expected = Buffer.from(this.#token)
       if (received.length !== expected.length || !timingSafeEqual(received, expected)) throw new Error("Local daemon authentication failed")
       this.#authenticated = true
-      return { name: hostname(), desktop: process.platform === "darwin" || process.platform === "win32" }
+      return {
+        name: hostname(),
+        desktop: process.platform === "darwin" || process.platform === "win32",
+        screenCapturePermission: this.#permissions.state,
+      }
     }
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
@@ -302,7 +312,7 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new ScreenCapturePermissions()) {
   const sessions = terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
   const catalog = new DaemonCatalog(directory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -319,7 +329,7 @@ export async function startControlServer(peers: ControlPeers, directory: string,
   void initialized.catch(() => {})
   const server = createServer(socket => {
     if (stopping) { socket.destroy(); return }
-    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, onShutdownRequested)
+    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, permissions, onShutdownRequested)
     connections.add(connection)
     const operation = initialized.then(() => connection.run()).catch(error => {
       if (published) console.error("Local desktop connection failed", error)

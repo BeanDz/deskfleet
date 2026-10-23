@@ -50,12 +50,19 @@ export type DesktopEvent =
   | { sessionId: string; kind: "stateChanged"; state: string }
   | { sessionId: string; kind: "error"; error: string }
 
+export interface ScreenCapturePermission {
+  status: "requesting" | "granted" | "denied" | "not-required" | "error"
+  error?: string
+}
+
 export interface LocalDaemonInfo {
   name: string
   desktop: boolean
+  screenCapturePermission: ScreenCapturePermission
 }
 
 export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent
+  | { kind: "screenCapturePermissionChanged"; permission: ScreenCapturePermission }
 
 export interface ControlMethods extends CatalogMethods, FilesystemMethods {
   hello: { params: { token: string }; result: LocalDaemonInfo }

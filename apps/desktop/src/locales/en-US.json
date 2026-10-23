@@ -34,7 +34,10 @@
     "runningSeparately": "Running separately",
     "retryStart": "Retry start",
     "retryStop": "Retry stop",
-    "retryLoad": "Reload settings"
+    "retryLoad": "Reload settings",
+    "screenCaptureRequesting": "Requesting access to record the screen and system audio…",
+    "screenCaptureDenied": "Allow access in macOS System Settings → Privacy & Security → Screen & System Audio Recording, then turn the local Agent off and on.",
+    "screenCaptureError": "Could not request screen and system audio access. Turn the local Agent off and on to retry."
   },
   "machine": {
     "offline": "Offline",

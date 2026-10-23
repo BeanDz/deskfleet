@@ -69,3 +69,19 @@ it("exits with an error when the daemon cannot start", async () => {
   await vi.waitFor(() => expect(mocks.app.exit).toHaveBeenCalledWith(1))
   expect(log).toHaveBeenCalledWith(error)
 })
+
+it("uses the injected daemon startup only after Electron is ready", async () => {
+  const ready = pending()
+  const closed = pending()
+  const close = vi.fn(() => closed.promise)
+  const start = vi.fn(async () => ({ close, closed: closed.promise }))
+  mocks.app.whenReady.mockReturnValue(ready.promise)
+
+  startDaemonHost(start)
+  expect(start).not.toHaveBeenCalled()
+  ready.resolve()
+  await vi.waitFor(() => expect(start).toHaveBeenCalledOnce())
+  expect(mocks.startDaemon).not.toHaveBeenCalled()
+  closed.resolve()
+  await vi.waitFor(() => expect(mocks.app.exit).toHaveBeenCalledWith(0))
+})

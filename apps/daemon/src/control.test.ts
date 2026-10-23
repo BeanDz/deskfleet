@@ -203,7 +203,7 @@ test("stopping control waits for an executing request before releasing its resou
 
 test("daemon control exchanges real native SDP and ICE without initializing capture", { timeout: 20_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-test-"))
-  const daemon = await startDaemon(0, { controlDirectory: directory })
+  const daemon = await startDaemon(0, { controlDirectory: directory, requestScreenCaptureAccess: async () => null })
   const peer = await createPeer({ video: "h264" })
   context.after(async () => { await peer.close(); await daemon.close(); await rm(directory, { recursive: true, force: true }) })
   const discovery = await readDaemonDiscovery(directory)

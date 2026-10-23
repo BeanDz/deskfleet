@@ -44,6 +44,10 @@ The CLI publishes its authenticated Unix socket or Windows named pipe in
 `DESKFLEET_DAEMON_DIRECTORY` to use another directory, with the same value in the
 Electron environment. Only one daemon can publish a live endpoint there. Local
 IPC initializes capture only when the client requests capabilities or a stream.
+On macOS, startup first requests screen/system-audio recording permission from
+the daemon process, without waiting for consent before serving other operations.
+The authenticated handshake and permission events report its status to Settings;
+denial does not stop the daemon. See [media permissions](../../agents/docs/media.md).
 Losing a client closes its peers, leaving the daemon, agent work, and terminal
 processes alive. The data-only terminal peer uses the same authenticated signaling
 path. Dial, hangup, catalog and lifecycle events use signaling; terminal bytes

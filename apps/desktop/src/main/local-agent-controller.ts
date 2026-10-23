@@ -1,16 +1,17 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
-import type { LocalAgentState } from "../shared/local-agent.ts"
+import type { LocalAgentState, ScreenCapturePermission } from "../shared/local-agent.ts"
 
 export interface LocalAgentConnection {
   readonly closed: boolean
+  readonly screenCapturePermission: ScreenCapturePermission
   shutdown(): Promise<void>
   close(): void
 }
 
 export interface LocalAgentRuntime {
-  connect(onDisconnect: (error: Error) => void): Promise<LocalAgentConnection>
+  connect(onDisconnect: (error: Error) => void, onPermissionChanged: (permission: ScreenCapturePermission) => void): Promise<LocalAgentConnection>
   launch(): Promise<{ error?: Error }>
   waitForShutdown(): Promise<void>
 }
@@ -52,7 +53,7 @@ export class LocalAgentController {
       if (this.#state.enabled) await this.#start()
       else {
         this.#connection = await this.#connectIfRunning()
-        this.#update({ status: this.#connection ? "running" : "stopped" })
+        this.#update({ status: this.#connection ? "running" : "stopped", screenCapturePermission: this.#connection?.screenCapturePermission })
       }
     } catch (error) { this.#failed(error) }
     return this.state
@@ -87,7 +88,7 @@ export class LocalAgentController {
   }
 
   #failed(error: unknown): void {
-    this.#update({ status: "error", error: error instanceof Error ? error.message : String(error) })
+    this.#update({ status: "error", error: error instanceof Error ? error.message : String(error), screenCapturePermission: undefined })
   }
 
   async #connectIfRunning(): Promise<LocalAgentConnection | undefined> {
@@ -99,6 +100,9 @@ export class LocalAgentController {
         if (this.#connection !== connection) return
         this.#connection = undefined
         if (this.#state.status !== "stopping") this.#failed(error)
+      }, permission => {
+        if (!connection || this.#connection !== connection) return
+        this.#update({ screenCapturePermission: permission })
       })
       return connection
     } catch (error) {
@@ -108,7 +112,7 @@ export class LocalAgentController {
   }
 
   async #start(): Promise<void> {
-    this.#update({ status: "starting" })
+    this.#update({ status: "starting", screenCapturePermission: undefined })
     this.#connection = await this.#connectIfRunning()
     if (!this.#connection) {
       const launched = await this.#runtime.launch()
@@ -121,17 +125,17 @@ export class LocalAgentController {
         await delay(100)
       } while (!this.#connection)
     }
-    this.#update({ status: "running" })
+    this.#update({ status: "running", screenCapturePermission: this.#connection.screenCapturePermission })
   }
 
   async #stop(): Promise<void> {
-    this.#update({ status: "stopping" })
+    this.#update({ status: "stopping", screenCapturePermission: undefined })
     this.#connection = await this.#connectIfRunning()
     if (this.#connection) {
       await this.#connection.shutdown()
       await this.#runtime.waitForShutdown()
       this.detach()
     }
-    this.#update({ status: "stopped" })
+    this.#update({ status: "stopped", screenCapturePermission: undefined })
   }
 }

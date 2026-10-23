@@ -6,6 +6,7 @@ import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { daemonDiscoveryPath } from "@deskfleet/daemon/control-discovery"
 import type { LocalAgentRuntime } from "./local-agent-controller.ts"
 import { DAEMON_HOST_ARGUMENT } from "../shared/daemon-launch.ts"
+import type { ScreenCapturePermission } from "../shared/local-agent.ts"
 
 export interface LocalAgentLaunchOptions {
   executable: string
@@ -17,10 +18,17 @@ export interface LocalAgentLaunchOptions {
 /** Shares Electron's bundled runtime, but has no IPC/lifetime tie to its parent. */
 export function createLocalAgentRuntime(options: LocalAgentLaunchOptions): LocalAgentRuntime {
   return {
-    async connect(onDisconnect) {
-      const client = await DaemonClient.connect(() => {}, onDisconnect, options.directory)
+    async connect(onDisconnect, onPermissionChanged) {
+      let permission: ScreenCapturePermission | undefined
+      const client = await DaemonClient.connect(event => {
+        if (event.kind !== "screenCapturePermissionChanged") return
+        permission = event.permission
+        onPermissionChanged(permission)
+      }, onDisconnect, options.directory)
       return {
         get closed() { return client.closed },
+        // Events can arrive alongside hello, before connect() resolves.
+        get screenCapturePermission() { return permission ?? client.info!.screenCapturePermission },
         shutdown: async () => { await client.call("shutdown", {}) },
         close: () => client.close(),
       }

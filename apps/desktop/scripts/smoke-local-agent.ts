@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn, type ChildProcess } from "node:child_process"
 import { createHash } from "node:crypto"
-import { mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -14,6 +14,7 @@ import type { LocalAgentSmokeContext, LocalAgentSmokeResult } from "./fixtures/l
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-agent-smoke-")))
 const executable = createRequire(import.meta.url)("electron") as string
 const appPath = resolve(import.meta.dirname, "..")
+const daemonAppPath = join(directory, "daemon.mjs")
 const daemonDirectory = join(directory, "daemon")
 const profileDirectory = join(directory, "profile")
 const checkoutPath = join(directory, "checkout")
@@ -32,7 +33,7 @@ async function stopClient(): Promise<void> {
 }
 
 async function launchClient(phase: LocalAgentSmokeContext["phase"], previous?: LocalAgentSmokeResult): Promise<LocalAgentSmokeResult> {
-  const context: LocalAgentSmokeContext = { phase, appPath, rendererDirectory, preloadPath, profileDirectory, daemonDirectory, checkoutPath, ...previous }
+  const context: LocalAgentSmokeContext = { phase, daemonAppPath, rendererDirectory, preloadPath, profileDirectory, daemonDirectory, checkoutPath, ...previous }
   const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: daemonDirectory }
   delete env.ELECTRON_RUN_AS_NODE
   electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${profileDirectory}`, `--local-agent-smoke-context=${JSON.stringify(context)}`], {
@@ -76,9 +77,14 @@ async function shutdownDaemon(): Promise<void> {
 }
 
 try {
-  await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath), stat(join(appPath, "out/main/index.js"))])
+  await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath)])
   await Promise.all([mkdir(checkoutPath), mkdir(profileDirectory)])
-  await build({ entryPoints: [join(import.meta.dirname, "fixtures/local-agent-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" })
+  await Promise.all([
+    build({ entryPoints: [join(import.meta.dirname, "fixtures/local-agent-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" }),
+    build({ entryPoints: [join(import.meta.dirname, "fixtures/local-agent-daemon.ts")], outfile: daemonAppPath, bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" }),
+    // The bundled native loader resolves the addon beside its JavaScript entry.
+    copyFile(join(appPath, "out/main/deskfleet.node"), join(directory, "deskfleet.node")),
+  ])
   assert.equal(await discoveryExists(), false)
   const created = await launchClient("start")
   assert.ok(created.workspaceId && created.terminalId && created.stoppedTerminalId)
@@ -86,6 +92,7 @@ try {
   assert.equal(created.daemonIdentity, createHash("sha256").update(JSON.stringify(discovery)).digest("hex"))
   const observer = await DaemonClient.connect(() => {}, () => {}, daemonDirectory)
   try {
+    assert.deepEqual(observer.info?.screenCapturePermission, { status: "denied" })
     const terminals = await observer.call("terminalList", {})
     assert.equal(terminals.find(value => value.id === created.terminalId)?.status, "running", "Terminal must survive client exit")
     assert.equal(terminals.find(value => value.id === created.stoppedTerminalId)?.status, "interrupted", "Explicit stop must terminate active shells")
@@ -97,7 +104,7 @@ try {
   assert.equal(JSON.parse(await readFile(join(profileDirectory, "settings.json"), "utf8")).localAgentEnabled, false)
   await launchClient("disabled")
   assert.equal(await discoveryExists(), false, "Persisted disabled preference must prevent daemon startup")
-  console.log("Production Electron local Agent: default startup, Settings off/on, catalog refresh, terminal interruption, client-independent lifetime, daemon reuse, and disabled startup passed")
+  console.log("Production Electron local Agent: startup permission denial, Settings off/on, catalog refresh, terminal interruption, client-independent lifetime, daemon reuse, and disabled startup passed")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   const log = await readFile(join(daemonDirectory, "daemon.log"), "utf8").catch(() => "")

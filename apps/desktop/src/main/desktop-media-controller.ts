@@ -99,7 +99,7 @@ export class DesktopMediaController {
         if (this.#connection !== connection) return
         if (event.kind === "catalogChanged") this.#emitCatalog()
         else if (event.kind === "terminalChanged" || event.kind === "terminalHungup") this.#emitTerminal(event)
-        else if (this.#sessions.has(event.sessionId)) this.#emit(event)
+        else if ("sessionId" in event && this.#sessions.has(event.sessionId)) this.#emit(event)
       },
       (error) => {
         if (this.#connection !== connection) return

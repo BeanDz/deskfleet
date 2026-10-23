@@ -1,3 +1,7 @@
+import type { ScreenCapturePermission } from "../../../daemon/src/control-protocol.ts"
+
+export type { ScreenCapturePermission } from "../../../daemon/src/control-protocol.ts"
+
 export const SETTINGS_CHANNEL = "deskfleet:settings"
 export const SETTINGS_CHANGED_EVENT = "deskfleet:settings-changed"
 
@@ -5,6 +9,7 @@ export interface LocalAgentState {
   enabled: boolean
   status: "stopped" | "starting" | "running" | "stopping" | "error"
   error?: string
+  screenCapturePermission?: ScreenCapturePermission
 }
 
 export type LocalAgentSettingsResult<T> = { ok: true; value: T } | { ok: false; error: string }

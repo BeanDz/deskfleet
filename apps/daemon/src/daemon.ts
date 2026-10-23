@@ -2,14 +2,19 @@ import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { join } from "node:path"
-import { nativeInfo } from "@deskfleet/native"
+import { nativeInfo, requestScreenCaptureAccess } from "@deskfleet/native"
 import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
 import { TerminalSessions } from "./terminals.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
+import { ScreenCapturePermissions } from "./screen-capture-permission.ts"
 
-export async function startDaemon(port = 0, options: { controlDirectory?: string } = {}) {
+export async function startDaemon(port = 0, options: {
+  controlDirectory?: string
+  requestScreenCaptureAccess?: () => Promise<boolean | null>
+} = {}) {
   const native = nativeInfo()
+  const permissions = new ScreenCapturePermissions()
   const peers = new PeerSessions()
   const controlDirectory = options.controlDirectory ?? daemonControlDirectory()
   const terminals = new TerminalSessions({ directory: join(controlDirectory, "terminals") })
@@ -54,13 +59,15 @@ export async function startDaemon(port = 0, options: { controlDirectory?: string
     return closed
   }
   try {
-    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() })
+    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() }, permissions)
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), terminals.close(), server[Symbol.asyncDispose]()])
     const failures = cleanup.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError([error, ...failures], "Daemon startup and cleanup failed", { cause: error })
     throw error
   }
+  // Request once we own the machine daemon, before any remote capture is used.
+  permissions.request(options.requestScreenCaptureAccess ?? requestScreenCaptureAccess)
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,

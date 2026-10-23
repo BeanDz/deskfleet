@@ -202,6 +202,13 @@ daemon-only host mode, using the bundled native addon and runtime. This process
 has no UI or client single-instance lock and has a separate Chromium profile.
 The standalone Node.js SEA remains the headless distribution of the same daemon.
 
+After acquiring discovery and initializing local IPC, the daemon requests the
+OS permissions needed by its implemented desktop capture capabilities. On macOS
+this is screen/system-audio recording consent, requested in the capturing daemon
+process before a remote client uses it. Permission prompts and denial must not
+block headless operations. Settings displays permission status separately from
+daemon availability; capture and encoding still start only on explicit use.
+
 Startup reuses an authenticated daemon already owning the discovery directory.
 Explicitly disabling the preference sends authenticated shutdown and waits for
 the discovery lease to be released after cleanup. It ends live terminal processes

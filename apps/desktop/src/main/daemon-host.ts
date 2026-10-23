@@ -5,7 +5,9 @@ import { startDaemon } from "@deskfleet/daemon"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
 
 /** Run the daemon library without installing the desktop client's UI lifecycle. */
-export function startDaemonHost(): void {
+export function startDaemonHost(
+  start: () => Promise<{ close(): Promise<void>; closed: Promise<void> }> = startDaemon,
+): void {
   const directory = join(daemonControlDirectory(), "electron-profile")
   mkdirSync(directory, { recursive: true })
   app.setPath("userData", directory)
@@ -22,7 +24,7 @@ export function startDaemonHost(): void {
     process.once("SIGINT", shutdown)
     process.once("SIGTERM", shutdown)
     powerMonitor.on("shutdown", shutdown)
-    return startDaemon()
+    return start()
   })
   function shutdown(): void {
     void daemon.then((running) => running.close()).catch(fail)
