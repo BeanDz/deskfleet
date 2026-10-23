@@ -125,7 +125,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
               :depth="1"
             />
             <ul>
-              <li v-for="terminal in session.worktree.terminals" :key="terminal.id">
+              <li v-for="terminal in session.worktree?.terminals ?? []" :key="terminal.id">
                 <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="2" />
               </li>
             </ul>

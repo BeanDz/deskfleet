@@ -4,6 +4,12 @@ import type { DeskfleetDesktopApi } from "../../../shared/desktop-api.ts"
 const api: DeskfleetDesktopApi = {
   platform: "linux",
   locale: "en-US",
+  agent: {
+    offer: async () => { throw new Error("Daemon unavailable") },
+    candidate: async () => {},
+    close: async () => {},
+    onEvent: () => () => {},
+  },
   settings: {
     get: async () => ({ enabled: true, status: "stopped" }),
     setLocalAgentEnabled: async (enabled) => ({ enabled, status: enabled ? "running" : "stopped" }),

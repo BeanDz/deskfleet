@@ -1,13 +1,13 @@
 import { computed } from "vue"
 import { useRoute } from "vue-router"
-import type { AgentSessionSummary, MachineSummary } from "../stores/fleet-types.ts"
-import { useFleetStore, type TerminalLocation, type WorkspaceLocation, type WorktreeLocation } from "../stores/fleet.ts"
+import type { MachineSummary } from "../stores/fleet-types.ts"
+import { useFleetStore, type SessionLocation, type TerminalLocation, type WorkspaceLocation, type WorktreeLocation } from "../stores/fleet.ts"
 
 /** The resource the current route shows, as context for the details panel. */
 export type RouteResource =
   | ({ kind: "workspace" } & WorkspaceLocation)
   | ({ kind: "worktree" } & WorktreeLocation)
-  | ({ kind: "session"; session: AgentSessionSummary } & WorktreeLocation)
+  | ({ kind: "session" } & SessionLocation)
   | ({ kind: "terminal" } & TerminalLocation)
   | { kind: "desktop"; machine: MachineSummary }
 
@@ -54,7 +54,7 @@ export function useRouteResource() {
   const worktree = computed<WorktreeLocation | null>(() => {
     const value = resource.value
     if (!value || value.kind === "desktop" || value.kind === "workspace") return null
-    if (value.kind === "terminal") {
+    if (value.kind === "terminal" || value.kind === "session") {
       return value.worktree ? fleet.findWorktree(value.worktree.id) : null
     }
     return value

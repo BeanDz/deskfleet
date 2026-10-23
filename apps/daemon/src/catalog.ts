@@ -25,6 +25,21 @@ export class DaemonCatalog {
     return () => this.#listeners.delete(listener)
   }
 
+  get native(): NativeCatalog {
+    if (!this.#catalog) throw new Error("Local catalog is not available")
+    return this.#catalog
+  }
+
+  async provisionSession(id: string, workspaceId: string): Promise<void> {
+    if (!this.#sessions) throw new Error("Local catalog is not available")
+    await this.#sessions.create(workspaceId, { id, workspaceId })
+    this.changed()
+  }
+
+  changed(): void {
+    for (const listener of this.#listeners) listener({ kind: "catalogChanged" })
+  }
+
   async handle(request: CatalogRequest): Promise<CatalogMethods[keyof CatalogMethods]["result"]> {
     const catalog = this.#catalog
     if (!catalog || !this.#sessions) throw new Error("Local catalog is not available")
@@ -52,7 +67,7 @@ export class DaemonCatalog {
         result = null
         break
     }
-    for (const listener of this.#listeners) listener({ kind: "catalogChanged" })
+    this.changed()
     return result
   }
 

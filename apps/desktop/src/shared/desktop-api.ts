@@ -4,6 +4,7 @@ import type { FilesystemApi } from "./filesystem.ts"
 import type { AppLocale } from "./i18n.ts"
 import type { LocalAgentSettingsApi } from "./local-agent.ts"
 import type { TerminalSignalingApi } from "./terminal.ts"
+import type { AgentSignalingApi } from "./agent.ts"
 
 /** The preload bridge exposed to the main renderer as `window.deskfleet`. */
 export interface DeskfleetDesktopApi {
@@ -14,4 +15,5 @@ export interface DeskfleetDesktopApi {
   filesystem: FilesystemApi
   desktop: DesktopMediaApi
   terminal: TerminalSignalingApi
+  agent: AgentSignalingApi
 }

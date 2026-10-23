@@ -20,7 +20,8 @@ export interface AgentProcess {
 }
 
 export interface AgentClient {
-  onUpdate(notification: acp.SessionNotification): void
+  onUpdate(notification: acp.SessionNotification): void | Promise<void>
+  onClose?(reason: Error): void
   requestPermission?(
     params: acp.RequestPermissionRequest,
     signal: AbortSignal,
@@ -30,9 +31,21 @@ export interface AgentClient {
 export interface AgentConnection {
   readonly initialization: acp.InitializeResponse
   newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse>
+  resume(params: acp.ResumeSessionRequest): Promise<acp.ResumeSessionResponse>
   prompt(params: acp.PromptRequest): Promise<acp.PromptResponse>
+  /** Never starts a detached provider turn. Inactive inputs need a normal prompt. */
+  steer(params: acp.PromptRequest, deliveryId: string): Promise<SteeringOutcome>
   cancel(sessionId: string): Promise<void>
   close(): Promise<void>
+}
+
+export type SteeringOutcome = { outcome: "injected" | "inactive" }
+
+export function supportsSteering(initialization: acp.InitializeResponse): boolean {
+  const steering = initialization._meta?.steering
+  return typeof steering === "object" && steering !== null
+    && "supported" in steering && steering.supported === true
+    && "supportsPromptRequired" in steering && steering.supportsPromptRequired === true
 }
 
 export async function connectAcpProcess(launch: AgentProcess, client: AgentClient): Promise<AgentConnection> {
@@ -45,9 +58,9 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   })
   const exited = new Promise<void>(resolve => child.once("close", () => resolve()))
   const connection = acp.client({ name: "deskfleet" })
-    .onNotification(acp.methods.client.session.update, ({ params }) => {
+    .onNotification(acp.methods.client.session.update, async ({ params }) => {
       try {
-        client.onUpdate(params)
+        await client.onUpdate(params)
       } catch (error) {
         connection.close(error)
       }
@@ -69,6 +82,9 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   child.once("error", error => {
     connection.close(new Error(`Could not start ${launch.command}: ${error.message}`, { cause: error }))
   })
+  child.once("exit", (code, signal) => {
+    connection.close(new Error(`ACP process exited (${signal ?? code})`))
+  })
 
   let closing: Promise<void> | undefined
   function close(): Promise<void> {
@@ -81,7 +97,14 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     closing = exited.finally(() => clearTimeout(timeout))
     return closing
   }
-  void connection.closed.then(close)
+  void connection.closed.then(() => {
+    const reason: unknown = connection.signal.reason
+    try {
+      client.onClose?.(reason instanceof Error ? reason : new Error("ACP connection closed", { cause: reason }))
+    } finally {
+      void close()
+    }
+  }).catch(error => console.error("ACP close callback failed", error))
 
   const timeout = setTimeout(() => {
     connection.close(new Error(`${launch.command} ACP initialization timed out`))
@@ -99,7 +122,25 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     return {
       initialization,
       newSession: params => connection.agent.request(acp.methods.agent.session.new, params),
+      resume: params => {
+        if (!initialization.agentCapabilities?.sessionCapabilities?.resume) {
+          return Promise.reject(new Error("The agent does not support session resume"))
+        }
+        return connection.agent.request(acp.methods.agent.session.resume, params)
+      },
       prompt: params => connection.agent.request(acp.methods.agent.session.prompt, params),
+      async steer(params, deliveryId) {
+        if (!supportsSteering(initialization)) throw new Error("The agent does not support steering without a new turn")
+        const result = await connection.agent.request("_session/steering", {
+          ...params,
+          _meta: { ...params._meta, steering: { idleBehavior: "promptRequired" }, deskfleet: { deliveryId } },
+        })
+        const outcome = typeof result === "object" && result !== null && "outcome" in result ? result.outcome : undefined
+        if (outcome === "injected") return { outcome: "injected" }
+        if (outcome === "promptRequired") return { outcome: "inactive" }
+        // A failed/unknown delivery is not evidence that the input was unconsumed.
+        throw new Error(`Steering delivery was not confirmed (${String(outcome)})`)
+      },
       cancel: sessionId => connection.agent.notify(acp.methods.agent.session.cancel, { sessionId }),
       close,
     }

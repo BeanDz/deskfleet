@@ -4,6 +4,7 @@ import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspa
 import type { LocalDesktopTarget } from "../../../shared/desktop-media.ts"
 import type { AgentSessionSummary, MachineSummary, TerminalSessionSummary, WorkspaceSummary, WorktreeSummary } from "./fleet-types.ts"
 import { useTerminalsStore } from "./terminals.ts"
+import { useAgentSessionsStore } from "./agent-sessions.ts"
 
 export interface WorkspaceLocation {
   machine: MachineSummary
@@ -11,10 +12,10 @@ export interface WorkspaceLocation {
 }
 export interface SessionLocation extends WorkspaceLocation {
   session: AgentSessionSummary
-  worktree: WorktreeSummary
+  worktree?: WorktreeSummary
 }
 /** Every worktree exposed by the client belongs to a Session. */
-export type WorktreeLocation = SessionLocation
+export interface WorktreeLocation extends SessionLocation { worktree: WorktreeSummary }
 /** Ownership is explicit; a terminal's working directory never determines its scope. */
 export interface TerminalLocation {
   machine: MachineSummary
@@ -26,7 +27,7 @@ export interface TerminalLocation {
 
 function* worktreeLocations(machines: MachineSummary[]): Generator<WorktreeLocation> {
   for (const machine of machines) for (const workspace of machine.workspaces) {
-    for (const session of workspace.sessions) yield { machine, workspace, session, worktree: session.worktree }
+    for (const session of workspace.sessions) if (session.worktree) yield { machine, workspace, session, worktree: session.worktree }
   }
 }
 function* terminalLocations(machines: MachineSummary[]): Generator<TerminalLocation> {
@@ -35,7 +36,7 @@ function* terminalLocations(machines: MachineSummary[]): Generator<TerminalLocat
     for (const workspace of machine.workspaces) {
       for (const terminal of workspace.terminals) yield { machine, workspace, terminal }
       for (const session of workspace.sessions) {
-        for (const terminal of session.worktree.terminals) yield { machine, workspace, session, worktree: session.worktree, terminal }
+        for (const terminal of session.worktree?.terminals ?? []) yield { machine, workspace, session, worktree: session.worktree, terminal }
       }
     }
   }
@@ -65,6 +66,7 @@ export const useFleetStore = defineStore("fleet", () => {
   const targetWorkspaceId = ref<string | null>(null)
   const collapsedMachineIds = ref(new Set<string>())
   const terminals = useTerminalsStore()
+  const agents = useAgentSessionsStore()
   const localMachine = () => machines.value.find(({ id }) => id === "local-daemon")!
   watch(() => terminals.sessions, sessions => { localMachine().terminals = sessions }, { immediate: true })
   let refreshingTarget: Promise<LocalDesktopTarget> | null = null
@@ -84,9 +86,24 @@ export const useFleetStore = defineStore("fleet", () => {
   function reconcileTarget(): void {
     if (!targetWorkspaceId.value || !findWorkspace(targetWorkspaceId.value)) targetWorkspaceId.value = localMachine().workspaces[0]?.id ?? null
   }
+  function applySessionMetadata(): void {
+    for (const machine of machines.value) for (const workspace of machine.workspaces) {
+      if (!machine.local) continue
+      const summaries = new Map(workspace.sessions.filter(session => session.worktree || agents.sessions[session.id]).map(session => [session.id, session]))
+      for (const metadata of Object.values(agents.sessions)) {
+        if (metadata.workspaceId !== workspace.id) continue
+        const summary = summaries.get(metadata.id) ?? { id: metadata.id }
+        Object.assign(summary, { title: metadata.title, provider: metadata.provider })
+        summaries.set(summary.id, summary)
+      }
+      workspace.sessions = [...summaries.values()]
+    }
+  }
+  watch(() => agents.sessions, applySessionMetadata, { deep: true })
   function applySnapshot(snapshot: CatalogSnapshot): void {
     catalogIdentity.value = { teamId: snapshot.teamId, machineId: snapshot.machineId }
     localMachine().workspaces = snapshot.workspaces.map(workspaceSummary)
+    applySessionMetadata()
     localMachine().name = snapshot.machineName
     localMachine().online = true
     localDesktopTarget.value = { ...localDesktopTarget.value, name: snapshot.machineName, online: true, error: undefined }
@@ -131,7 +148,7 @@ export const useFleetStore = defineStore("fleet", () => {
     await refreshLocalDesktop()
     await refreshLocalCatalog()
   }
-  const unsubscribe = window.deskfleet.catalog.onChanged(() => { void refreshLocalCatalog() })
+  const unsubscribe = window.deskfleet.catalog.onChanged(() => { void refreshLocalCatalog(); void agents.refresh() })
   onScopeDispose(unsubscribe)
   const canManageCatalog = computed(() => localMachine().online && catalogReady.value)
   function requireLocalCatalog(): void {
@@ -149,6 +166,7 @@ export const useFleetStore = defineStore("fleet", () => {
     const existing = findWorkspace(value.id)
     if (existing) Object.assign(existing.workspace, workspaceSummary(value))
     else localMachine().workspaces.push(workspaceSummary(value))
+    applySessionMetadata()
     targetWorkspaceId.value = value.id
     return value
   }
@@ -157,6 +175,7 @@ export const useFleetStore = defineStore("fleet", () => {
     const value = await window.deskfleet.catalog.updateWorkspace(id, name, directories)
     const current = findWorkspace(id)
     if (current) Object.assign(current.workspace, workspaceSummary(value))
+    applySessionMetadata()
     reconcileTarget()
   }
   async function deleteWorkspace(id: string): Promise<void> {
@@ -166,7 +185,11 @@ export const useFleetStore = defineStore("fleet", () => {
     reconcileTarget()
   }
   function findSession(sessionId: string): SessionLocation | null {
-    return [...worktreeLocations(machines.value)].find(({ session }) => session.id === sessionId) ?? null
+    for (const machine of machines.value) for (const workspace of machine.workspaces) {
+      const session = workspace.sessions.find(session => session.id === sessionId)
+      if (session) return { machine, workspace, session, worktree: session.worktree }
+    }
+    return null
   }
   function findTerminal(id: string): TerminalLocation | null {
     return [...terminalLocations(machines.value)].find(({ terminal }) => terminal.id === id) ?? null

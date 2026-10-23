@@ -2,6 +2,8 @@ import { createPinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { catalogFixture, sessionId, sessionWorktreeId, mainWorktreeId, workspaceId } from "../test/catalog.ts"
 import { useFleetStore } from "./fleet.ts"
+import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { agentSnapshot } from "../test/agent.ts"
 
 const stores: ReturnType<typeof useFleetStore>[] = []
 let changed: () => void
@@ -35,11 +37,11 @@ test("maps configured directories onto the workspace and exposes only Session-ow
   expect(session.id).toBe(sessionId)
   expect(session).not.toHaveProperty("title")
   expect(session).not.toHaveProperty("provider")
-  expect(session.worktree.id).toBe(sessionWorktreeId)
+  expect(session.worktree!.id).toBe(sessionWorktreeId)
   expect(session.worktree).not.toHaveProperty("sessions")
   expect(store.findSession(sessionId)?.session).toBe(session)
   expect(store.findWorktree(sessionWorktreeId)?.session).toBe(session)
-  session.worktree.terminals.push({ id: "session-terminal", title: "shell", cwd: "/worktrees/api/session" })
+  session.worktree!.terminals.push({ id: "session-terminal", title: "shell", cwd: "/worktrees/api/session" })
   expect(store.findTerminal("session-terminal")?.session).toBe(session)
   expect(store.findTerminal("session-terminal")?.worktree).toBe(session.worktree)
 })
@@ -71,7 +73,7 @@ test("workspace updates replace configured directories and retain Session paths;
   expect(store.findWorkspace(workspaceId)?.workspace.name).toBe("renamed")
   expect(store.findWorkspace(workspaceId)?.workspace.directories.map(({ path }) => path)).toEqual(paths.map(({ path }) => path))
   expect(store.findWorktree(mainWorktreeId)).toBeNull()
-  expect(store.findSession(sessionId)?.worktree.directories.map(({ path }) => path)).toEqual(["/worktrees/api/session"])
+  expect(store.findSession(sessionId)?.worktree?.directories.map(({ path }) => path)).toEqual(["/worktrees/api/session"])
   expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
   vi.mocked(window.deskfleet.catalog.list).mockRejectedValueOnce(new Error("Daemon disconnected"))
   await store.refreshLocalCatalog()
@@ -115,4 +117,23 @@ test("catalog notifications reconcile a selected workspace removed by another cl
   changed()
   await vi.waitFor(() => expect(store.newSessionTarget?.workspace.id).toBe(workspaceId))
   expect(store.findWorkspace("20")).toBeNull()
+})
+
+
+test("merges durable titles and keeps failed provisioning visible without fabricating a Worktree", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions = {
+    [sessionId]: { ...agentSnapshot().session, id: sessionId, workspaceId, title: "A real title" },
+    "failed": { ...agentSnapshot().session, id: "failed", workspaceId, lifecycle: "provision_failed", title: "Could not create context" },
+  }
+  await vi.waitFor(() => expect(store.findSession(sessionId)?.session.title).toBe("A real title"))
+  expect(store.findSession("failed")?.session.title).toBe("Could not create context")
+  expect(store.findSession("failed")?.worktree).toBeUndefined()
+  await store.refreshLocalCatalog()
+  expect(store.findSession(sessionId)?.session.title).toBe("A real title")
+  expect(store.findSession("failed")).not.toBeNull()
+  delete agents.sessions["failed"]
+  await vi.waitFor(() => expect(store.findSession("failed")).toBeNull())
 })

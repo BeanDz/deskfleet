@@ -42,6 +42,7 @@ export class DesktopMediaController {
         return (await this.#connect()).call(method, request)
       }
       case "offer":
+      case "agentOffer":
       case "terminalOffer": {
         const offer = validateControlParams(method, params)
         if (this.#sessions.has(offer.sessionId)) throw new Error("Desktop session already exists")

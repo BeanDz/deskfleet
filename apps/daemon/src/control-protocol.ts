@@ -70,6 +70,7 @@ export interface ControlMethods extends CatalogMethods, FilesystemMethods {
   capabilities: { params: Record<string, never>; result: DesktopCapabilities }
   offer: { params: DesktopOffer; result: { sdp: string } }
   terminalOffer: { params: TerminalOffer; result: { sdp: string } }
+  agentOffer: { params: TerminalOffer; result: { sdp: string } }
   terminalList: { params: Record<string, never>; result: TerminalSummary[] }
   terminalDial: { params: TerminalDial; result: TerminalSummary }
   terminalHangup: { params: { terminalId: string }; result: null }

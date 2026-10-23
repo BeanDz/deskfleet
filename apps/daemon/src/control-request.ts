@@ -56,9 +56,10 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
       break
     case "offer":
     case "terminalOffer":
+    case "agentOffer":
       sessionId(params.sessionId)
       if (typeof params.sdp !== "string" || !params.sdp || params.sdp.length > 192 * 1024) throw new Error("Invalid SDP offer")
-      if (method === "terminalOffer") break
+      if (method === "terminalOffer" || method === "agentOffer") break
       if (params.codec !== "h264" && params.codec !== "h265" && params.codec !== "av1") throw new Error("Invalid video codec")
       if (typeof params.audio !== "boolean") throw new Error("Invalid audio setting")
       break

@@ -5,7 +5,8 @@ export interface AgentSessionSummary {
   title?: string
   /** The agent provider's user-facing name. */
   provider?: string
-  worktree: WorktreeSummary
+  /** Absent while provisioning or if context creation failed. */
+  worktree?: WorktreeSummary
 }
 
 /** A terminal owned by a machine, workspace, or worktree. Its cwd can change freely. */

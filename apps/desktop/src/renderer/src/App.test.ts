@@ -42,7 +42,7 @@ afterEach(() => {
 test("the app targets a workspace and lists its sessions without exposing an internal main worktree", async () => {
   const wrapper = await mountApp()
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "Codex"])
-  expect(wrapper.get('[aria-label="Send (not available yet)"]').attributes("aria-disabled")).toBe("true")
+  expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(true)
   expect(wrapper.get("aside").text()).not.toContain("Example team")
   expect(link(wrapper, "storefront").attributes("href")).toBe(`#/workspaces/${workspaceId}`)
   expect(link(wrapper, `Session ${sessionId}`).attributes("href")).toBe(`#/sessions/${sessionId}`)

@@ -7,12 +7,15 @@ and access terminals or desktops on the machine doing the work.
 This document describes the planned system. The current implementation contains
 the Rust resource model, a SeaORM catalog with SQLite persistence, an Actix Web
 liveness endpoint, and an independent TypeScript daemon calling a napi-rs addon.
-The desktop client manages workspace directory configuration through the daemon.
-The daemon runs from source or a SEA
-executable, exposes native information and a local health endpoint, and runs
-Codex CLI sessions through ACP. Native WebRTC peers, DataChannels, and on-demand
-capture/encoding are available through the daemon's native API. The Electron
-client uses authenticated local IPC for desktop signaling and Chromium WebRTC
+The desktop client manages workspace directory configuration and persistent
+Codex Sessions with conversation history, a shared backlog, steering, and
+approvals. The daemon runs from source or a SEA executable, exposes native
+information and a local health endpoint, and runs Codex CLI sessions through ACP.
+Agent clients use an ACP facade over DataChannel;
+the daemon owns execution, audit, and SQLite history. Native WebRTC peers,
+DataChannels, and on-demand capture/encoding are available through the daemon's
+native API. The Electron client uses authenticated local IPC for desktop signaling
+and Chromium WebRTC
 for decoding and playback in its sandboxed Vue renderer. It stays in the tray
 independently of the daemon.
 
@@ -183,9 +186,9 @@ The Electron renderer consumes these operations through its narrow preload bridg
 It displays real local resources and supports opening a machine-owned terminal
 at a selected binding's path. The working directory does not change terminal
 ownership. Accounts, organizations, remote enrollment, central catalog HTTP
-operations, daemon synchronization, and agent-session execution/history UI are
-not yet connected. The client lists Session identities from their owned Worktrees
-and exposes each Worktree from its Session, without inventing provider metadata.
+operations, and daemon synchronization are not yet connected. The Agent UI lists
+persisted Session metadata and exposes each Session's Worktree when provisioning
+has succeeded. Failed provisioning remains visible without a fabricated Worktree.
 Daemon terminal transcripts retain their existing storage.
 
 ## Daemon and session lifecycle
@@ -253,16 +256,21 @@ sessions, imported history, resumed sessions, and attachment to an existing CLI
 process are distinct capabilities. ACP alone does not guarantee live attachment;
 a tmux connection can expose the CLI without providing structured ACP control.
 
-Agent events feed deskfleet's session view and stored history. Preserve the
-provider's session identifier and relevant provider metadata alongside the
-common conversation, tool, approval, and state events. Credentials remain on the
-executing machine. ACP approval callbacks do not confine agents that execute
-tools directly.
+The [Agent Session service](agent-sessions.md) persists provider identity,
+inputs, execution turns, command audit, permissions, and an ordered event journal
+in the daemon's SQLite catalog. Clients connect to a daemon ACP facade over
+DataChannel; the daemon remains the sole ACP client toward each provider process.
+Credentials remain on the executing machine. ACP approval callbacks do not confine
+agents that execute tools directly.
 
-Reconnecting clients attach to the current session without resubmitting prompts.
-Multiple observers must not produce conflicting control or approval responses;
-the control policy will be defined with the session API. Disconnect never grants
-approval.
+All authorized users and devices can operate on a Session concurrently, without
+control ownership or transfer. Commands record the initiating user and source
+machine separately from the executing machine. Pending inputs appear in a shared
+candidate backlog; users can also explicitly steer the active turn when the
+provider supports it. The daemon coordinates input delivery and permission
+decisions, with the first valid response resolving each permission request.
+Reconnecting clients attach by journal cursor without resubmitting inputs.
+Disconnect never grants approval or stops the Session.
 
 Daemon restart recovery depends on the provider and terminal backend. Reconcile
 stored history with available processes and report interrupted sessions. On
@@ -280,9 +288,10 @@ created on demand.
 | Presence, history synchronization, and WebRTC signaling | Authenticated WebSocket or HTTPS streams |
 | Terminal dial, hangup, catalog and lifecycle events | Authenticated signaling; IPC for the local client |
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel |
+| Agent prompts, steering, permissions, and live Session events | ACP and deskfleet extensions over WebRTC DataChannel |
 | Desktop video/audio | WebRTC media tracks |
 | Desktop input | WebRTC DataChannel |
-| Local client operations | Authenticated IPC |
+| Local discovery, catalog operations, and signaling | Authenticated IPC; Agent and terminal streams use DataChannels |
 
 Deploy STUN and TURN alongside signaling. TURN provides relay access when peers
 cannot connect directly. Desktop streaming, terminal traffic, and bulk results
@@ -325,9 +334,11 @@ Its placement and provider configuration will be selected during integration.
 The central server stores synchronized conversation and tool history, not just
 session names. The daemon retains unsynchronized events during server outages.
 Synchronization must tolerate retries and distinguish incomplete history from a
-complete recording. Catalog persistence uses SQLite through SeaORM; the history
-event format and replay mechanism remain to be defined when implementing history
-persistence.
+complete recording. The [Agent Session persistence design](agent-sessions.md)
+extends the SQLite/SeaORM catalog with command audit and a per-Session sequence.
+The daemon commits events before publishing them; the server synchronizes a
+qualified Session identity and completeness watermark. The owning daemon remains
+the single writer even when multiple clients operate concurrently.
 
 Live commands require an available target machine. Terminal output is persisted
 on the owning daemon until explicit hangup so a different client can reconstruct
@@ -409,9 +420,10 @@ and [agent guide](../../AGENTS.md) for repository conventions.
 
 ## Next milestone
 
-Daemon/native packaging and the first ACP provider are implemented. Next add a
-second ACP provider and authenticated WebRTC with direct and TURN-relayed terminal
-access.
+Daemon/native packaging, persistent Codex Sessions, the ACP DataChannel facade,
+and the conversation UI with a shared backlog, steering, and permissions are
+implemented. Remote enrollment and authenticated signaling will extend the same
+client contract across machines, including direct and TURN-relayed access.
 
 Then complete one workflow: enroll a headless machine, register a workspace and
 a worktree spanning frontend/backend directories, run an agent, inspect its Git
@@ -421,7 +433,7 @@ synchronized history remains available while the machine is offline.
 
 MCP coordination and desktop control follow that workflow. Remaining choices
 include provider distribution, terminal backends, Linux capture/encoding,
-authenticated signaling, and session history persistence.
+authenticated signaling, and central history synchronization.
 
 ## References
 

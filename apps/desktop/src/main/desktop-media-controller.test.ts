@@ -105,11 +105,11 @@ test("dial and hangup use authenticated signaling even without a data peer", asy
   await expect(controller.invoke("terminalHangup", { terminalId: "../other" })).rejects.toThrow("session ID")
 })
 
-test("terminal signaling reuses per-window peer ownership without requiring media settings", async () => {
+test.each(["terminalOffer", "agentOffer"] as const)("%s signaling reuses per-window peer ownership without requiring media settings", async (method) => {
   const { controller, client, event, emit } = fixture()
   const terminalOffer = { sessionId: "terminal-peer", sdp: "data-only-offer" }
-  await controller.invoke("terminalOffer", terminalOffer)
-  expect(client.call).toHaveBeenCalledWith("terminalOffer", terminalOffer)
+  await controller.invoke(method, terminalOffer)
+  expect(client.call).toHaveBeenCalledWith(method, terminalOffer)
   event({ sessionId: "terminal-peer", kind: "stateChanged", state: "connected" })
   expect(emit).toHaveBeenCalledWith({ sessionId: "terminal-peer", kind: "stateChanged", state: "connected" })
   await expect(controller.invoke("offer", { ...offer, sessionId: "terminal-peer" })).rejects.toThrow("already exists")

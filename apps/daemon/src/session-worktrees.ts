@@ -65,7 +65,7 @@ export class ManagedSessionWorktrees {
     this.#directory = resolve(directory, "session-worktrees")
   }
 
-  async create(workspaceId: string): Promise<ManagedWorkspaceSession> {
+  async create(workspaceId: string, allocated?: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
     const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === workspaceId)
     const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
     if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
@@ -73,7 +73,8 @@ export class ManagedSessionWorktrees {
     // usable for terminals but cannot supply isolated agent sessions.
     const sources: SourceDirectory[] = []
     for (const directory of main.directories) sources.push(await sourceDirectory(directory.path))
-    const session = await this.#catalog.createWorkspaceSession(workspaceId)
+    if (allocated && allocated.workspaceId !== workspaceId) throw new Error("Session belongs to a different workspace")
+    const session = allocated ?? await this.#catalog.createWorkspaceSession(workspaceId)
     const directory = this.#sessionDirectory(session.id)
     const manifest: Manifest = { sessionId: session.id, worktrees: [] }
     try {
@@ -102,7 +103,7 @@ export class ManagedSessionWorktrees {
     } catch (error) {
       try {
         await this.#removeOwned(manifest)
-        await this.#catalog.deleteWorkspaceSession(session.id)
+        if (!allocated) await this.#catalog.deleteWorkspaceSession(session.id)
       } catch (cleanup) {
         throw new AggregateError([error, cleanup], `Session ${session.id} creation failed and cleanup is incomplete`, { cause: error })
       }

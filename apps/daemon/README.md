@@ -124,6 +124,25 @@ to connect the installed Codex CLI to ACP. The adapter is a pinned pnpm dependen
 and ships inside the SEA executable. Install and authenticate Codex CLI before
 sending prompts; the daemon uses that CLI's credentials.
 
+The desktop **New session** flow creates a persistent Session and its isolated
+Git Worktree. Its conversation, queued inputs, runs, approval decisions, and
+command audit are stored in the same SQLite catalog. Closing a client leaves
+execution running; reopening replays the journal over the `deskfleet-acp`
+DataChannel. The composer can queue a message or steer the current turn, and a
+pending candidate can also be selected for steering. Stop retains the backlog;
+Resume reuses the saved Codex conversation. Explicit deletion removes the owned
+checkouts and history while retaining command audit.
+
+Local IPC adds `agentOffer` for SDP/ICE signaling only. Conversation operations
+use the DataChannel extensions documented in
+[Agent Sessions](../../agents/docs/agent-sessions.md). Local token identity is
+audited today; remote account enrollment is separate work.
+
+Run `mise run desktop:smoke-agent` to verify the production Electron flow with
+real WebRTC, SQLite, and Git worktrees using a scripted provider and no paid
+inference. The one-shot CLI below remains useful independently of persistent
+desktop Sessions.
+
 After `mise run install`, check ACP initialization or run one prompt from source:
 
 ```sh
@@ -157,6 +176,21 @@ Electron client does not destroy the Session.
 
 The CLI cancels permission requests and emits `permission_cancelled` events.
 It has no approval UI; prompts requiring approval cannot proceed through it.
+
+The pinned adapter uses
+[`patches/@agentclientprotocol__codex-acp@2.2.2.patch`](../../patches/@agentclientprotocol__codex-acp@2.2.2.patch).
+It makes steering return `promptRequired` when the target turn ends, allowing the
+daemon to start and track the next prompt. See the
+[steering contract](../../agents/docs/agent-sessions.md#codex-steering-boundary)
+for capability negotiation and delivery semantics. Remove the patch when the
+pinned adapter provides that contract upstream.
+
+Source and SEA launches route adapter subprocesses through `--codex-acp` on their
+own entry point. The Electron daemon configures its bundled main entry as the
+adapter host and starts it with `ELECTRON_RUN_AS_NODE=1`, including from ASAR.
+That entry routes to the bundled adapter before loading Electron UI or daemon
+lifecycle code. Adapter processes use the same installed Codex binary selection
+and can terminate naturally when their ACP input closes.
 
 The packaged executable accepts the same arguments:
 

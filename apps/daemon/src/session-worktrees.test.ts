@@ -255,6 +255,8 @@ test("interruptions during checkout or provider initialization still clean up th
             return {
               initialization: { protocolVersion: 1 },
               newSession: async () => assert.fail("An interrupted initialization must not create an ACP session"),
+              resume: async () => assert.fail("An interrupted initialization must not resume an ACP session"),
+              steer: async () => assert.fail("An interrupted initialization must not steer"),
               prompt: async () => assert.fail("An interrupted initialization must not prompt"),
               cancel: async () => assert.fail("No ACP session exists to cancel"),
               close: async () => { await Promise.resolve(); events.push("provider-close") },

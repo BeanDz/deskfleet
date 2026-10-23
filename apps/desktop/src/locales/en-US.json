@@ -62,7 +62,6 @@
   },
   "session": {
     "notFound": "This session does not exist.",
-    "historyUnavailable": "Session history is not available yet.",
     "label": "Session {id}",
     "worktree": "Worktree"
   },
@@ -206,5 +205,77 @@
     "empty": "No folders in this location.",
     "showHidden": "Show hidden folders",
     "select": "Select folder"
+  },
+  "agent": {
+    "conversation": "Conversation",
+    "localUser": "Local user",
+    "system": "System",
+    "sourceMachine": "Machine {id}",
+    "image": "Agent image",
+    "contentType": "{type} content",
+    "tool": "Tool call",
+    "thinking": "Thinking",
+    "plan": "Plan",
+    "startedNewTurn": "Started a new turn",
+    "steered": "Steered the turn",
+    "backlog": "Candidate backlog",
+    "steer": "Steer now",
+    "withdraw": "Withdraw",
+    "retryInput": "Retry delivery",
+    "uncertainInput": "Delivery could not be confirmed. Check the conversation before submitting again.",
+    "permissions": "Permissions",
+    "permissionRequired": "Permission required",
+    "permissionResolved": "Permission answered",
+    "permissionCancelled": "Permission cancelled",
+    "backlogHint": "Sent messages wait in the shared backlog.",
+    "addToBacklog": "Add to backlog",
+    "cancelTurn": "Cancel turn",
+    "stop": "Stop agent",
+    "resume": "Resume agent",
+    "delete": "Delete session",
+    "stopQuestion": "Stop this agent? Its conversation and worktree will remain.",
+    "deleteQuestion": "Delete this session, its conversation, and its managed worktree?",
+    "loading": "Restoring conversation…",
+    "disconnected": "Connection lost. The agent continues on its machine.",
+    "reconnect": "Reconnect",
+    "operationPending": "The operation result needs to be checked.",
+    "checkResult": "Check result",
+    "empty": "Send a message to start working.",
+    "toolStatus": {
+      "pending": "Pending",
+      "in_progress": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "inputState": {
+      "pending": "Waiting",
+      "dispatching": "Sending",
+      "failed": "Delivery failed",
+      "uncertain": "Delivery uncertain"
+    },
+    "runState": {
+      "starting": "Starting agent…",
+      "running": "Agent running",
+      "stopping": "Stopping agent…",
+      "stopped": "Agent stopped",
+      "interrupted": "Agent interrupted",
+      "failed": "Agent failed"
+    },
+    "lifecycle": {
+      "provisioning": "Preparing worktree…",
+      "ready": "Ready",
+      "provision_failed": "Worktree creation failed",
+      "deleting": "Deleting session…"
+    },
+    "turnState": {
+      "completed": "Turn completed",
+      "cancelled": "Turn cancelled",
+      "interrupted": "Turn interrupted",
+      "failed": "Turn failed"
+    },
+    "creating": "Creating session…",
+    "stoppedHint": "Candidates wait until the agent is running.",
+    "resumeUnavailable": "This provider cannot resume this session. Start a new session to continue.",
+    "inputInProgress": "In progress"
   }
 }

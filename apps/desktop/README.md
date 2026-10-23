@@ -20,7 +20,7 @@ Ctrl-C stops the watchers.
 The local Agent stays running across client rebuilds and dev restarts. After
 changing daemon code or its IPC contracts, restart it from **Settings →
 Preferences → This computer → Run local Agent** by switching it off and on.
-This stops live terminals; saved catalog and terminal history remain. Restarting
+This stops live terminals and agent runs; saved catalog, conversation, and terminal history remain. Restarting
 only the dev client continues to use the already-running daemon's code.
 
 `mise run desktop:build` writes the production bundles to `out/`. Run them with
@@ -57,7 +57,7 @@ execution contexts reached from their owning Session. They are created and
 removed by Session lifecycle operations. The catalog's main Worktree is internal
 storage for Workspace directories and is not a separate resource in the UI.
 Deleting a Workspace removes its catalog records, leaving source directories
-untouched; active Sessions prevent deletion. The UI refreshes on catalog changes,
+untouched; existing Sessions prevent deletion. The UI refreshes on catalog changes,
 window focus, and the explicit refresh action; failures retain the displayed
 catalog and show an error.
 
@@ -68,11 +68,9 @@ terminal** opens a native PTY, and **Open terminal here** on a worktree director
 starts one at that path. Those terminals retain machine scope. The application
 does not display sample machines as live resources.
 
-Accounts, organization switching, remote machine registration, target
-and provider pickers, Send, Git inspection, file diffs, and session transcripts
-remain unimplemented.
-Placeholder controls are labelled, `aria-disabled`, and do nothing. They use
-`IconButton`'s `placeholder` state or the `common.placeholderControl` title.
+Accounts, organization switching, remote machine registration, target/provider
+pickers, Git inspection, and file diffs remain unimplemented. Placeholder controls
+use `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
 
 The window is frameless and has three columns. The sidebar holds the window
 toolbar (sidebar toggle, back, forward), the New session action, the resource
@@ -95,7 +93,7 @@ machines start collapsed and report when they were last seen.
 | `/` | New session: a composer targeting a machine, workspace, and provider |
 | `/workspaces/:workspaceId` | Workspace name, ordered directories, Sessions, default-directory terminal, and deletion |
 | `/worktrees/:worktreeId` | Directory bindings and the owning Session of a session Worktree |
-| `/sessions/:sessionId` | A session's title, location, and composer |
+| `/sessions/:sessionId` | Conversation, tools, permissions, candidate backlog, composer, and agent lifecycle |
 | `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
 | `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
@@ -122,6 +120,37 @@ The details panel has two tabs:
 
 `useRouteResource` resolves the route to that resource. The new session page
 describes its target Workspace.
+
+## Agent sessions
+
+Install and authenticate Codex CLI on the daemon's machine before sending a
+prompt. The bundled ACP adapter uses that CLI and its credentials. **New session**
+creates a persistent Session and an isolated Git Worktree from the selected
+Workspace, then submits the prompt. Provisioning failures remain visible with
+their error and can be deleted; they do not expose a usable Worktree.
+
+The conversation shows streamed text, tool calls, plans, and permission requests.
+Messages submitted during a turn enter the shared candidate backlog. **Steer now**
+can send a new message or a selected candidate to the active turn when the provider
+supports it. Pending candidates can be withdrawn; confirmed delivery failures can
+be retried. Uncertain delivery requires checking the recorded result before
+submitting again. The UI displays each input's author and source machine, plus the
+operator who steered it. A permission answered by another client immediately shows
+that decision and removes the choices.
+
+**Cancel turn** ends the current turn. **Stop agent** preserves the conversation,
+backlog, and Worktree. **Resume agent** continues the saved provider session when
+supported. **Delete session** removes its conversation and managed checkouts;
+command audit remains in the daemon database. Navigating away, disconnecting, or
+quitting Electron leaves the agent running. Restarting the daemon retains history
+and marks interrupted runs for explicit resumption.
+
+`useAgentSessionsStore` subscribes to snapshots and replays the committed event
+journal in sequence order. Reconnecting checks pending operation IDs instead of
+submitting prompts again. Local drafts remain in the running client until their
+submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
+`deskfleet-acp` DataChannel; preload and main only carry SDP/ICE signaling. See
+[Agent Sessions](../../agents/docs/agent-sessions.md) for persistence and concurrency.
 
 ## Terminal
 
@@ -200,8 +229,8 @@ on. Waiting for consent or denying it leaves terminals and other Agent work
 available. Reusing an already running Agent does not repeat the request.
 
 Turning the switch off requests authenticated daemon shutdown, including active
-terminal processes, and waits for cleanup. Workspace data and terminal history
-remain on disk. Turning it back on reconnects the UI to the new daemon. A failed
+agent and terminal processes, and waits for cleanup. Workspace data, conversation
+history, and terminal history remain on disk. Turning it back on reconnects the UI to the new daemon. A failed
 start or stop appears in Settings with a retry action. Disabled startup does not
 terminate a daemon started separately; Settings reports it as running separately.
 
@@ -271,9 +300,10 @@ mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host plat
 `out/`, including the `@deskfleet/daemon` library. The native addon is copied next
 to the main bundle and unpacked from ASAR for loading; installer builds use the
 release addon. The app has no runtime `node_modules` or external Node dependency.
-The same installed executable hosts the daemon with `--deskfleet-daemon`, without
-using Electron's `RunAsNode` mode. Packages enable ASAR integrity
-validation and disable the `RunAsNode`, `NODE_OPTIONS`, and `--inspect` fuses.
+The same installed executable hosts the daemon with `--deskfleet-daemon` and
+runs the bundled Codex ACP adapter with `--codex-acp` in Electron's Node mode.
+The `RunAsNode` fuse stays enabled for that adapter process. Packages enable ASAR
+integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
 
@@ -291,6 +321,8 @@ mise run check:desktop        # Vitest: main/shared in Node, renderer in happy-d
 mise run desktop:smoke-media  # real Chromium/native H.264 decode; no screen capture
 mise run desktop:smoke-terminal  # real PTY I/O, resize, and reattachment over WebRTC
 mise run desktop:smoke-catalog  # built renderer CRUD, SQLite persistence, and directory shell cwd
+mise run desktop:smoke-agent  # conversation, backlog, steering, permissions, and restart recovery
+mise run desktop:smoke-startup  # client, daemon, and bundled adapter entry-point routing
 mise run desktop:smoke-local-agent  # Settings toggle, daemon reuse, and independent process lifetime
 ```
 
@@ -304,6 +336,13 @@ built renderer, preload, Settings controller, and bundled daemon host. It verifi
 default startup, switching off and on, catalog refresh, terminal interruption on
 shutdown, terminal survival after client exit, reuse by another client, and the
 persisted disabled preference on a third launch.
+
+The Agent Session smoke drives the production renderer through real WebRTC,
+SQLite persistence, and managed Git checkouts with a scripted ACP provider. It
+checks streaming, shared backlog steering, permission decisions, leaving and
+returning to the session, and history recovery after restarting both daemon and
+client. The startup smoke checks entry-point routing and initializes the bundled
+Codex adapter without paid inference.
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The
 package therefore installs TypeScript 6 under the `typescript` name. The root
