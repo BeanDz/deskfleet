@@ -1,0 +1,21 @@
+[package]
+name = "deskfleet-store"
+description = "SeaORM persistence for the deskfleet resource catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+deskfleet-migration.workspace = true
+deskfleet-model.workspace = true
+sea-orm.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

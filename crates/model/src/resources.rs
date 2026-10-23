@@ -18,7 +18,7 @@ pub struct Machine {
     pub name: String,
 }
 
-/// A grouping of worktrees on one machine, without an implied filesystem root.
+/// A machine-owned workspace with one main worktree containing its configured directories.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Workspace {
     pub id: WorkspaceId,
@@ -26,22 +26,30 @@ pub struct Workspace {
     pub name: String,
 }
 
-/// A working context spanning directories, not necessarily one Git worktree.
+/// A workspace's main directories, or a session's managed working directories.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Worktree {
     pub id: WorktreeId,
     pub workspace_id: WorkspaceId,
-    pub name: String,
+    /// Absent only for the workspace's automatic main worktree.
+    pub session_id: Option<AgentSessionId>,
     pub directories: DirectoryBindings,
 }
 
-/// An agent's resource association and the directory context captured at startup.
-///
-/// The owning machine and workspace are resolved through the worktree hierarchy.
+/// The minimal persisted lifecycle record for a session in a workspace.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceSession {
+    pub id: AgentSessionId,
+    pub workspace_id: WorkspaceId,
+}
+
+/// An agent session's workspace ownership and startup directory context.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AgentSession {
     pub id: AgentSessionId,
-    pub worktree_id: WorktreeId,
+    pub workspace_id: WorkspaceId,
+    /// Optional managed worktree owned by this session.
+    pub worktree_id: Option<WorktreeId>,
     pub provider: String,
     pub provider_session_id: Option<String>,
     pub cwd: String,
@@ -76,11 +84,10 @@ pub struct TerminalSession {
 mod tests {
     use super::*;
     use serde_json::json;
-    use uuid::Uuid;
 
     #[test]
     fn terminal_scope_wire_format_preserves_all_three_ownership_levels() {
-        let id = Uuid::from_u128(1);
+        let id = 1_i64;
         for (scope, kind) in [
             (TerminalScope::Machine(id.into()), "machine"),
             (TerminalScope::Workspace(id.into()), "workspace"),
@@ -98,11 +105,11 @@ mod tests {
     #[test]
     fn terminal_scope_rejects_ambiguous_or_unknown_ownership() {
         for invalid in [
-            json!({"kind": "project", "id": Uuid::nil().to_string()}),
+            json!({"kind": "project", "id": "1"}),
             json!({
                 "kind": "machine",
-                "id": Uuid::nil().to_string(),
-                "workspace_id": Uuid::nil().to_string()
+                "id": "1",
+                "workspace_id": "1"
             }),
         ] {
             assert!(serde_json::from_value::<TerminalScope>(invalid).is_err());

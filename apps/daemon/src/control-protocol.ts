@@ -1,4 +1,5 @@
 import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./terminal-protocol.ts"
+import type { CatalogEvent, CatalogMethods } from "./catalog-protocol.ts"
 
 /** Provisional local IPC contract. Media and terminal bytes stay on WebRTC. */
 export type VideoCodec = "h264" | "h265" | "av1"
@@ -53,10 +54,11 @@ export interface LocalDaemonInfo {
   desktop: boolean
 }
 
-export type DaemonEvent = DesktopEvent | TerminalSessionEvent
+export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent
 
-export interface ControlMethods {
+export interface ControlMethods extends CatalogMethods {
   hello: { params: { token: string }; result: LocalDaemonInfo }
+  shutdown: { params: Record<string, never>; result: null }
   capabilities: { params: Record<string, never>; result: DesktopCapabilities }
   offer: { params: DesktopOffer; result: { sdp: string } }
   terminalOffer: { params: TerminalOffer; result: { sdp: string } }
@@ -82,4 +84,5 @@ export interface DaemonDiscovery {
   token: string
 }
 
+/** Limit client requests; accumulated catalog responses may be larger. */
 export const MAX_CONTROL_MESSAGE_BYTES = 256 * 1024

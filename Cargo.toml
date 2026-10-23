@@ -4,11 +4,13 @@ members = [
     "crates/capture",
     "crates/encoder",
     "crates/model",
+    "crates/migration",
     "crates/native",
     "crates/nvenc",
     "crates/nvenc-sys",
     "crates/node",
     "crates/protocol",
+    "crates/store",
 ]
 exclude = [".agents/skills/rust-skills/checks"]
 resolver = "3"
@@ -27,6 +29,8 @@ deskfleet-encoder = { path = "crates/encoder" }
 deskfleet-nvenc = { path = "crates/nvenc" }
 deskfleet-nvenc-sys = { path = "crates/nvenc-sys" }
 deskfleet-model = { path = "crates/model" }
+deskfleet-migration = { path = "crates/migration" }
+deskfleet-store = { path = "crates/store" }
 deskfleet-native = { path = "crates/native" }
 deskfleet-protocol = { path = "crates/protocol" }
 
@@ -38,10 +42,11 @@ napi-build = "2.6"
 napi-derive = "3.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sea-orm = { version = "2.0.4", default-features = false, features = ["macros", "runtime-tokio", "sqlx-sqlite", "sqlite-use-returning-for-3_35"] }
+sea-orm-migration = { version = "2.0.4", default-features = false, features = ["runtime-tokio", "sqlx-sqlite"] }
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
 webrtc = "0.17"
 opus = "0.3"

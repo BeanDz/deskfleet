@@ -11,6 +11,7 @@ import { parseControlRequest } from "./control-request.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
+import { DaemonCatalog } from "./catalog.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -45,22 +46,30 @@ class ControlConnection {
   readonly #peers: ControlPeers
   readonly #capabilities: Capabilities
   readonly #terminals: TerminalSessions
+  readonly #catalog: DaemonCatalog
+  readonly #onShutdownRequested: (() => void) | undefined
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #dialed = new Set<string>()
   readonly #unsubscribe: () => void
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
     this.#capabilities = capabilities
     this.#terminals = terminals
-    this.#unsubscribe = terminals.onChange(event => {
+    this.#catalog = catalog
+    this.#onShutdownRequested = onShutdownRequested
+    const unsubscribeTerminals = terminals.onChange(event => {
       if (event.kind === "terminalHungup") this.#dialed.delete(event.terminalId)
       if (this.#authenticated) this.#send({ event })
     })
+    const unsubscribeCatalog = catalog.onChange(event => {
+      if (this.#authenticated) this.#send({ event })
+    })
+    this.#unsubscribe = () => { unsubscribeTerminals(); unsubscribeCatalog() }
     socket.on("error", () => {})
     socket.once("close", () => { void this.close().catch(error => console.error("Desktop session cleanup failed", error)) })
   }
@@ -68,8 +77,9 @@ class ControlConnection {
   #send(value: ControlMessage): void {
     if (this.#socket.destroyed || this.#socket.writableEnded) return
     const data = JSON.stringify(value) + "\n"
-    // A stalled client must not grow the native event consumer's write queue.
-    if (this.#socket.writableLength + Buffer.byteLength(data) > MAX_CONTROL_MESSAGE_BYTES * 4) {
+    // Bound an already-stalled client's queue, while allowing one catalog
+    // snapshot to exceed the per-request size limit.
+    if (this.#socket.writableLength > MAX_CONTROL_MESSAGE_BYTES * 4) {
       this.#socket.destroy()
       return
     }
@@ -89,6 +99,17 @@ class ControlConnection {
           pending = pending.subarray(end + 1)
           try {
             const result = await this.#handle(request)
+            if (request.method === "shutdown") {
+              // Flush the acknowledgement before shutdown closes client sockets.
+              await new Promise<void>(resolve => {
+                const flushed = () => { this.#socket.off("close", flushed); resolve() }
+                if (this.#socket.destroyed) return resolve()
+                this.#socket.once("close", flushed)
+                this.#socket.end(JSON.stringify({ id: request.id, result }) + "\n", flushed)
+              })
+              this.#onShutdownRequested?.()
+              return
+            }
             this.#send({ id: request.id, result })
           } catch (error) {
             this.#send({ id: request.id, error: message(error) })
@@ -120,6 +141,16 @@ class ControlConnection {
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
     if (this.#closing) throw new Error("Local daemon connection is closed")
     switch (request.method) {
+      case "shutdown":
+        if (!this.#onShutdownRequested) throw new Error("Daemon shutdown is unavailable")
+        return null
+      case "catalogList":
+      case "workspaceCreate":
+      case "workspaceUpdate":
+      case "workspaceDelete":
+      case "workspaceSessionCreate":
+      case "workspaceSessionDestroy":
+        return this.#catalog.handle(request)
       case "capabilities":
         return this.#capabilities()
       case "terminalList":
@@ -266,40 +297,59 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void) {
   const sessions = terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
+  const catalog = new DaemonCatalog(directory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
   if (process.platform !== "win32") await chmod(directory, 0o700)
   const temporary = await mkdtemp(join(tmpdir(), "df-ipc-"))
   const endpoint = process.platform === "win32" ? `\\\\.\\pipe\\deskfleet-${randomUUID()}` : join(temporary, "c.sock")
   const discovery: DaemonDiscovery = { endpoint, token: randomBytes(32).toString("hex") }
   const connections = new Set<ControlConnection>()
+  const running = new Set<Promise<void>>()
+  let stopping: Promise<void> | undefined
   let ready!: () => void
   let failed!: (error: unknown) => void
   const initialized = new Promise<void>((resolve, reject) => { ready = resolve; failed = reject })
   void initialized.catch(() => {})
   const server = createServer(socket => {
-    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions)
+    if (stopping) { socket.destroy(); return }
+    const connection = new ControlConnection(socket, discovery.token, peers, capabilities, sessions, catalog, onShutdownRequested)
     connections.add(connection)
-    void initialized.then(() => connection.run()).catch(error => {
+    const operation = initialized.then(() => connection.run()).catch(error => {
       if (published) console.error("Local desktop connection failed", error)
       return connection.close().catch(cleanup => console.error("Local connection cleanup failed", cleanup))
-    }).finally(() => connections.delete(connection))
+    }).finally(() => { connections.delete(connection); running.delete(operation) })
+    running.add(operation)
   })
   let published = false
   let closing: Promise<void> | undefined
+  const stop = () => stopping ??= (async () => {
+    // Keep the endpoint bound until resource cleanup finishes. A competing
+    // startup must still recognize this discovery record as live.
+    const results = await Promise.allSettled([...connections].map(connection => connection.close()).concat([...running]))
+    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (failures.length) throw new AggregateError(failures, "Failed to stop local daemon connections")
+  })()
   const close = () => closing ??= (async () => {
-    const stopped = server.listening ? new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) : Promise.resolve()
     try {
-      await Promise.all([...connections].map(connection => connection.close()))
-      await stopped
+      await stop()
     } finally {
-      if (published) {
-        const current = await readFile(daemonDiscoveryPath(directory), "utf8").catch(() => "")
-        if (current === JSON.stringify(discovery)) await rm(daemonDiscoveryPath(directory), { force: true })
+      try {
+        if (!terminals) await sessions.close()
+      } finally {
+        try {
+          await catalog.close()
+        } finally {
+          if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+          // Discovery remains owned until all daemon resources have finished closing.
+          if (published) {
+            const current = await readFile(daemonDiscoveryPath(directory), "utf8").catch(() => "")
+            if (current === JSON.stringify(discovery)) await rm(daemonDiscoveryPath(directory), { force: true })
+          }
+          await rm(temporary, { recursive: true, force: true })
+        }
       }
-      await rm(temporary, { recursive: true, force: true })
-      if (!terminals) await sessions.close()
     }
   })()
   try {
@@ -310,9 +360,10 @@ export async function startControlServer(peers: ControlPeers, directory: string,
     published = true
     // Recover only after owning discovery: a second daemon must never rewrite
     // the active daemon's terminal metadata while probing its endpoint.
+    await catalog.init()
     await sessions.init()
     ready()
-    return { close }
+    return { stop, close }
   } catch (error) {
     failed(error)
     await close()

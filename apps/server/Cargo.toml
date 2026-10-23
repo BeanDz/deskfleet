@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 actix-web.workspace = true
 deskfleet-protocol.workspace = true
+deskfleet-store.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

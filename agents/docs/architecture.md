@@ -5,8 +5,10 @@ computers. Users can browse workspaces and session history, inspect Git state,
 and access terminals or desktops on the machine doing the work.
 
 This document describes the planned system. The current implementation contains
-the Rust resource model, an Actix Web liveness endpoint, and an independent
-TypeScript daemon calling a napi-rs addon. The daemon runs from source or a SEA
+the Rust resource model, a SeaORM catalog with SQLite persistence, an Actix Web
+liveness endpoint, and an independent TypeScript daemon calling a napi-rs addon.
+The desktop client manages workspace directory configuration through the daemon.
+The daemon runs from source or a SEA
 executable, exposes native information and a local health endpoint, and runs
 Codex CLI sessions through ACP. Native WebRTC peers, DataChannels, and on-demand
 capture/encoding are available through the daemon's native API. The Electron
@@ -32,7 +34,7 @@ flowchart LR
 | Component | Responsibility | Implementation |
 | --- | --- | --- |
 | Central server | Team membership, machine registration, catalog, stored session history, presence, access control, and signaling | Rust / Actix Web |
-| Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript / Node.js SEA |
+| Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
 | Web application | Server-hosted catalog, history, and browser-supported remote access | TypeScript |
@@ -53,52 +55,128 @@ Team
   Machine
     TerminalSessions [machine scope]
     Workspace
-      TerminalSessions [workspace scope]
-      Worktree
-        Directory bindings [one or more]
-        AgentSessions
-        TerminalSessions [worktree scope]
+      Ordered directory paths [one or more; first is default]
+      Main Worktree [the configured directories]
+      AgentSessions
+        Managed Worktree [created and removed with the Session]
+      TerminalSessions [machine, workspace, or worktree scope]
 ```
 
 | Resource | Meaning |
 | --- | --- |
 | Team | Membership and shared access boundary |
 | Machine | An enrolled daemon installation and its OS user execution context |
-| Workspace | A grouping of related worktrees on one machine |
-| Worktree | A working context binding directories and agent sessions within a workspace |
-| Directory binding | A named path on the worktree's machine |
-| AgentSession | A provider session belonging to one worktree, with its startup directory context |
+| Workspace | A named, machine-local configuration of one or more ordered directory paths |
+| Worktree | The permanent main context or a temporary execution context owned by one Session |
+| Directory binding | An unnamed path with a stable position; position zero is the default directory |
+| AgentSession | A workspace session with its captured execution context and provider identity |
 | TerminalSession | A terminal owned by one Machine, Workspace, or Worktree, with a separate cwd |
 
-A deskfleet Worktree can span repositories and directories. It is not necessarily
-one native Git worktree, branch, or checkout. A directory binding may reference
-a normal checkout, a native Git worktree, a subdirectory, or a directory without
-Git. Existing directories can be registered directly.
+A Workspace must be created with at least one existing directory. Its paths are
+ordered and have no user-assigned aliases; the first path is the default working
+directory. Creating the Workspace also creates exactly one main Worktree in the
+same transaction. The main Worktree uses the actual configured directories.
+Updating the Workspace changes this main context without retargeting existing
+Session contexts.
+
+Worktrees are not independently maintained resources. Each managed Session
+allocates its own Worktree automatically; destroying that Session removes its
+owned Worktree. For Git-backed contexts, the daemon creates detached Git worktrees
+from the configured checkouts' HEAD commits, grouping paths in the same checkout
+and preserving subdirectory positions. Uncommitted source changes are not copied.
+The first derived path is the Session's default working directory. Workspace
+paths may be non-Git for main-context terminals; creating an isolated Session
+requires Git-backed paths with a commit.
 
 For example:
 
 ```text
 Machine: development-box
   Workspace: storefront
-    Worktree: main
-      frontend -> /code/storefront-web
-      backend  -> /code/storefront-api
-      AgentSession: investigate checkout failures
-    Worktree: checkout-fix
-      frontend -> /worktrees/storefront-web/checkout-fix
-      backend  -> /worktrees/storefront-api/checkout-fix
-      AgentSession: implement the fix
+    Directories:
+      /code/storefront-web  [default]
+      /code/storefront-api
+    Main Worktree: the two configured directories
+    Session: investigate checkout failures
+      Worktree: automatically generated checkouts for this Session
 ```
 
-Each checkout has its own branch, HEAD, and changes. Worktree summaries preserve
-that attribution. Resource IDs are independent of names, paths, and repository
-URLs. Resources on different machines remain distinct even when they share a
-repository remote.
+Each checkout retains its own Git state. Resource IDs are independent of names,
+paths, and repository URLs. Resources on different machines remain distinct even
+when they share a repository remote.
 
 A terminal's scope determines its association and access policy. Its cwd can
 change without reparenting the terminal. Machine and workspace terminals need no
 placeholder worktree. Resource ownership itself does not sandbox a shell's
 filesystem access.
+
+### Catalog persistence
+
+`deskfleet-store` persists resource catalogs with SeaORM. The first schema
+contains `teams`, `machines`, `workspaces`, `workspace_sessions`, `worktrees`, and
+`worktree_directories`. The main Worktree stores each Workspace's configured
+paths; Session-owned Worktrees store derived paths. Shared types in
+`deskfleet-model` remain independent of the ORM.
+
+Resource primary keys and foreign keys are signed 64-bit integers, allocated by
+their owning catalog database. SQLite uses `INTEGER PRIMARY KEY AUTOINCREMENT`;
+the same SeaQuery migration renders PostgreSQL `BIGINT` identity columns.
+Resource IDs cross JSON boundaries as decimal strings to preserve precision in
+JavaScript. They are unique within their resource table and catalog database,
+not independently allocated identities that can be merged across databases.
+Identities such as public user IDs that need to conceal internal numbering use
+UUIDv7 instead; no user table is introduced in this schema.
+
+Parent foreign keys enforce the resource hierarchy. Teams and machines with
+children cannot be deleted. A Workspace with Sessions cannot be deleted; deleting
+one without Sessions removes its main Worktree and directory rows. Session deletion
+cascades to its managed Worktree. Main Worktrees have no Session ID, and each
+Workspace has exactly one main context. Directory rows are keyed by Worktree and
+position, with no name column. Paths must be nonempty and unique in the ordered
+collection; filesystem validation belongs to the daemon.
+
+Workspace creation and updates write the main Worktree and its nonempty directory
+collection atomically. Reads preserve directory order. The default directory is
+always the first path, so no separate default flag can diverge from ordering.
+The store is a persistence boundary, not an authorization boundary.
+
+`deskfleet-migration` owns explicit, reversible schema migrations. Server startup
+opens `DATABASE_URL` and applies pending migrations before accepting HTTP
+connections. SQLite is the currently enabled and tested backend. The schema uses
+portable SeaQuery types and constraints for a later PostgreSQL backend; enabling
+that backend will also require connection configuration and PostgreSQL integration
+tests. See the [server guide](../../apps/server/README.md) for configuration and
+migration commands.
+
+The standalone daemon opens `<daemon directory>/catalog.db` through a thin
+`NativeCatalog` napi binding after acquiring its discovery endpoint. `LocalCatalog`
+initializes a persistent local Team/Machine context in a transaction and scopes
+all operations to that machine. This context enables operation without login;
+it does not represent an authenticated account or organization membership.
+The local database is independent of the central server database. Enrollment and
+synchronization must map catalog identities rather than equate independently
+allocated integer IDs.
+
+Authenticated local IPC exposes catalog listing and Workspace create/update/delete,
+plus Session create/destroy operations. There are no manual Worktree mutations.
+The daemon validates Workspace paths as absolute, existing directories. Committed
+changes broadcast `catalogChanged` to authenticated clients. Removing a Workspace
+never removes its configured directories from the filesystem.
+
+Session creation allocates a durable Session ID and creates Git worktrees beneath
+`<daemon directory>/session-worktrees/<session ID>/`. A manifest records generated
+paths for cleanup after restart. Failure rolls back generated checkouts. Explicit
+Session destruction removes those disposable checkouts, including their local
+changes, before deleting the Session record. It never removes source checkouts.
+A daemon/client disconnect alone does not destroy a Session.
+
+The Electron renderer consumes these operations through its narrow preload bridge.
+`local-daemon` remains a connection target, distinct from the database Machine ID.
+It displays real local resources and supports opening a machine-owned terminal
+at a selected binding's path. The working directory does not change terminal
+ownership. Accounts, organizations, remote enrollment, central catalog HTTP
+operations, daemon synchronization, and agent-session UI are not yet connected.
+Daemon terminal transcripts retain their existing storage.
 
 ## Daemon and session lifecycle
 
@@ -107,14 +185,28 @@ credentials, and tools the agents use. Closing the app or losing a connection
 must leave ongoing work running. Local clients connect over authenticated IPC,
 such as a Unix-domain socket or Windows named pipe.
 
+Desktop Settings has a persistent **Run local Agent** preference, enabled by
+default. The client consumes `@deskfleet/daemon` as a library bundled into the
+application. It starts a detached instance of its own Electron executable in a
+daemon-only host mode, using the bundled native addon and runtime. This process
+has no UI or client single-instance lock and has a separate Chromium profile.
+The standalone Node.js SEA remains the headless distribution of the same daemon.
+
+Startup reuses an authenticated daemon already owning the discovery directory.
+Explicitly disabling the preference sends authenticated shutdown and waits for
+the discovery lease to be released after cleanup. It ends live terminal processes
+but retains catalog and terminal history. Client exit only detaches, leaving the
+daemon alive. Disabling auto-start does not kill an independently started daemon
+when a client next launches. Startup/shutdown errors and retries appear in Settings.
+
 The desktop client stays resident in the system tray (the macOS menu bar or the
 Windows notification area). Closing its window or using an ordinary quit command
 hides it. The tray menu, OS session end, or a termination signal exits the client
 process.
 
 The daemon is the ACP client and owns local agent processes or adapter
-connections. Each AgentSession belongs to a worktree. Startup records the cwd
-and directory bindings; later edits to the worktree must not silently retarget a
+connections. Each AgentSession belongs to a Workspace and captures its Worktree execution
+context at startup; later edits to the Workspace must not silently retarget a
 running session. Additional directories are exposed through the provider's
 supported configuration or tools.
 
@@ -127,9 +219,13 @@ initialization, session creation, prompts, cancellation, and session updates.
 Codex uses the installed CLI and its credentials. The adapter runs as a child
 process; the SEA executable reuses its bundled Node runtime.
 
-The current agent CLI creates one ACP session per prompt invocation. Its cwd and
-provider session ID remain distinct from deskfleet's Worktree and AgentSession
-resources. It forwards ACP updates without converting them into a history schema.
+The current agent CLI creates one ACP session per prompt invocation. With
+`--workspace-id`, it asks the running daemon to allocate a managed Session and
+uses its first derived directory as cwd. It closes the provider process before
+destroying that Session and its generated Worktree, including on prompt or
+initialization failure. Direct `--cwd` invocations remain outside the managed
+Workspace lifecycle. Provider session IDs remain separate from database Session
+IDs. The CLI forwards ACP updates without converting them into a history schema.
 Permission requests require a client callback; without one they are cancelled.
 The CLI cancels them explicitly. The client advertises no filesystem or terminal
 capabilities.
@@ -195,7 +291,8 @@ control.
 Git inspection starts with the Git CLI's machine-readable output. Resolve each
 directory to its checkout and retrieve branch, HEAD, status, and diffs. Query a
 shared checkout once when several bindings point to it. Non-Git directories stay
-usable. Initial Git support is read-only; live queries require the daemon.
+usable in the main context. Session provisioning creates and removes managed Git
+worktrees; Git status/diff UI and live inspection remain to be connected.
 
 MCP tools let an agent discover authorized machines and resources, inspect state,
 and request operations on an explicit target. Remotely created sessions belong
@@ -211,8 +308,9 @@ Its placement and provider configuration will be selected during integration.
 The central server stores synchronized conversation and tool history, not just
 session names. The daemon retains unsynchronized events during server outages.
 Synchronization must tolerate retries and distinguish incomplete history from a
-complete recording. Choose the database, event format, and replay mechanism when
-implementing persistence.
+complete recording. Catalog persistence uses SQLite through SeaORM; the history
+event format and replay mechanism remain to be defined when implementing history
+persistence.
 
 Live commands require an available target machine. Terminal output is persisted
 on the owning daemon until explicit hangup so a different client can reconstruct
@@ -249,6 +347,8 @@ where passing frames through JavaScript would add unnecessary copies.
 Node.js SEA packages the daemon and native addon with the pinned Node runtime.
 The addon is extracted to a private temporary directory before loading. See the
 [daemon guide](../../apps/daemon/README.md) for packaging and platform support.
+Desktop builds bundle the same daemon library with Electron and an unpacked
+native addon. Neither distribution requires an external Node installation.
 Agent adapters and external tools may have their own runtime requirements.
 
 Desktop capability is optional and initialized on demand. Missing displays or
@@ -263,6 +363,8 @@ The Rust workspace contains:
 | Crate | Responsibility |
 | --- | --- |
 | `deskfleet-model` | Resource IDs, directory bindings, and session associations |
+| `deskfleet-store` | SeaORM entities and transactional catalog persistence |
+| `deskfleet-migration` | Catalog schema migrations and optional migration CLI |
 | `deskfleet-protocol` | Shared wire contracts and protocol version |
 | `deskfleet-native` | Native capabilities independent of Node.js |
 | `deskfleet-capture` | Native display capture and retained GPU surfaces |
@@ -272,7 +374,9 @@ The Rust workspace contains:
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 
-Dependencies flow `server -> protocol -> model`, `node -> native -> capture/encoder`, and
+Dependencies flow `server -> protocol -> model`, `server -> store -> model/migration`,
+`node -> store -> model/migration` for local catalog persistence,
+`node -> native -> capture/encoder`, and
 `@deskfleet/daemon -> @deskfleet/native`. The pnpm workspace currently contains
 the daemon, the desktop client, and the native package. TypeScript wire types
 should derive from the same authoritative contracts as Rust; napi declarations
@@ -300,7 +404,7 @@ synchronized history remains available while the machine is offline.
 
 MCP coordination and desktop control follow that workflow. Remaining choices
 include provider distribution, terminal backends, Linux capture/encoding,
-authenticated signaling, and persistence schema.
+authenticated signaling, and session history persistence.
 
 ## References
 

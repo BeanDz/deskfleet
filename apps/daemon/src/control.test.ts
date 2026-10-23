@@ -112,6 +112,9 @@ test("local control authenticates before native calls and privately publishes di
   context.after(() => unauthenticated.close())
   await assert.rejects(unauthenticated.call("offer", offer), /Authenticate/)
   assert.equal(fake.configCalls.length, 0)
+  const unauthorizedShutdown = new Client(discovery.endpoint)
+  context.after(() => unauthorizedShutdown.close())
+  await assert.rejects(unauthorizedShutdown.call("shutdown", {}), /Authenticate/)
   const wrongToken = new Client(discovery.endpoint)
   context.after(() => wrongToken.close())
   await assert.rejects(wrongToken.call("hello", { token: "wrong" }), /authentication failed/)
@@ -120,6 +123,7 @@ test("local control authenticates before native calls and privately publishes di
   const info = await client.call("hello", { token: discovery.token })
   assert.ok(info.name)
   assert.deepEqual(await client.call("capabilities", {}), await capabilities())
+  await assert.rejects(client.call("shutdown", {}), /shutdown is unavailable/)
   await assert.rejects(startControlServer(fake.service, directory, capabilities), /already running/)
   assert.deepEqual(await readDaemonDiscovery(directory), discovery)
 })
@@ -154,6 +158,42 @@ test("desktop sessions belong to their IPC connection and close on disconnect", 
   assert.equal(fake.peers.size, 0)
   await second.call("close", { sessionId: "screen-1" })
   assert.deepEqual(await second.call("capabilities", {}), await capabilities())
+})
+
+test("stopping control waits for an executing request before releasing its resources", { timeout: 5_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-stop-"))
+  const entered = deferred<void>()
+  const release = deferred<void>()
+  let completed = false
+  const server = await startControlServer(fakePeers().service, directory, async () => {
+    entered.resolve()
+    await release.promise
+    completed = true
+    return capabilities()
+  })
+  context.after(async () => {
+    release.resolve()
+    await server.close()
+    await rm(directory, { recursive: true, force: true })
+  })
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  const request = assert.rejects(client.call("capabilities", {}), /closed/)
+  await entered.promise
+  let stopped = false
+  const stopping = server.stop().then(() => { stopped = true })
+  await request
+  assert.equal(stopped, false)
+  assert.equal(completed, false)
+  assert.deepEqual(await readDaemonDiscovery(directory), discovery)
+  release.resolve()
+  await stopping
+  assert.equal(completed, true)
+  assert.deepEqual(await readDaemonDiscovery(directory), discovery)
+  await server.close()
+  await assert.rejects(readDaemonDiscovery(directory), { code: "ENOENT" })
 })
 
 test("daemon control exchanges real native SDP and ICE without initializing capture", { timeout: 20_000 }, async context => {

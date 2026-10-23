@@ -11,18 +11,26 @@ The project is a Rust and TypeScript monorepo. The central backend uses Actix We
 The independent TypeScript daemon calls Rust through napi-rs and packages as a
 Node.js Single Executable Application (SEA). The Electron client uses Vue.
 
-The current implementation includes resource types, the server's `GET /healthz`,
-a daemon with native platform information, a local health endpoint, and
-Codex CLI sessions over ACP, and an initial Electron client shell.
+The current implementation includes resource types, a SeaORM catalog backed by
+SQLite, the server's `GET /healthz`, and an independent daemon with native platform
+information, a local health endpoint, and Codex CLI sessions over ACP. The Electron
+client manages local Workspace directory configuration through authenticated daemon IPC.
+Each Workspace has an automatic main Worktree; managed Sessions create and destroy
+their own temporary Git worktrees. The client opens terminals in configured
+directories and supports WebRTC terminal and desktop
+access. Accounts, organization membership, and remote machine enrollment remain
+planned work.
 
 ## Rust workspace
 
 | Package | Location | Responsibility |
 | --- | --- | --- |
 | `deskfleet-model` | `crates/model` | Typed resource IDs, the machine/workspace/worktree hierarchy, directory bindings, and session associations |
+| `deskfleet-store` | `crates/store` | SeaORM entities and transactional workspace/worktree catalog persistence |
+| `deskfleet-migration` | `crates/migration` | Catalog schema migrations and an optional CLI |
 | `deskfleet-protocol` | `crates/protocol` | Shared wire contracts and protocol version |
 | `deskfleet-native` | `crates/native` | Platform capabilities independent of Node.js and the server |
-| `deskfleet-node` | `crates/node` | Thin napi-rs bindings over the native library |
+| `deskfleet-node` | `crates/node` | Thin napi-rs bindings over native capabilities and local catalog persistence |
 | `deskfleet-server` | `apps/server` | Actix Web control-plane backend |
 
 Install [mise](https://mise.jdx.dev/getting-started.html), then run from the

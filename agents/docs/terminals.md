@@ -12,10 +12,13 @@ backend uses `portable-pty`, exposed through the thin `NativeTerminal` napi-rs
 binding. Spawn, write, resize, wait, and termination run outside Node's event
 loop. The daemon continuously consumes native output even with no viewer.
 
-The UI creates machine-scoped terminals in the daemon user's
-home directory. The working directory is independent of resource ownership.
-Workspace/worktree registration and remote machine enrollment are not connected
-yet; sample catalog entries cannot create or control local terminals.
+The UI creates machine-scoped terminals in the daemon user's home directory,
+in a Workspace's first path with **Open terminal in default directory**, or in
+a selected directory with **Open terminal here**.
+The working directory is independent of resource ownership: those terminals
+remain under the local machine, and editing/deleting a Workspace does not retarget
+or close them. Local Workspace directory configuration is connected; remote machine
+enrollment remains unimplemented.
 
 Navigating away detaches the view. Losing a peer, reloading the renderer, or
 quitting Electron closes the transport without terminating the shell. On startup

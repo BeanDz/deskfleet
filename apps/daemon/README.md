@@ -1,8 +1,10 @@
 # deskfleet daemon
 
-`@deskfleet/daemon` is a foreground TypeScript process that runs independently of
-the desktop app. It reports native platform information, serves a loopback health
-endpoint, and runs Codex CLI sessions over ACP.
+`@deskfleet/daemon` is a TypeScript library with standalone and desktop-bundled
+process hosts. It runs independently of the desktop client's lifetime, reports
+native platform information, serves a loopback health
+endpoint, owns a persistent workspace/worktree catalog, and runs Codex CLI
+sessions over ACP.
 
 Its programmatic `PeerSessions` API owns native WebRTC peers and optional desktop
 streams; daemon shutdown closes these sessions. The CLI exposes authenticated
@@ -50,8 +52,62 @@ and their full disk-backed output history. History lives in the daemon directory
 until explicit hangup. Restart preserves history and marks lost processes
 interrupted. See [terminals](../../agents/docs/terminals.md).
 
-On Unix, SIGINT and SIGTERM close the listeners, media sessions, and PTYs, remove the
+On Unix, SIGINT and SIGTERM close the listeners, database, media sessions, and PTYs, remove the
 discovery record, and exit cleanly.
+
+The package root exports `startDaemon()`, returning `close()` and a `closed`
+promise that settles after cleanup. Importing the library does not launch the
+CLI. The `control-client` and `control-discovery` subpaths let clients connect
+without loading native daemon implementation modules. Authenticated `shutdown`
+acknowledges the request, stops new work, and closes resources before releasing
+discovery. Unauthenticated clients cannot request shutdown.
+
+Desktop Settings starts this library in a detached, windowless Electron process
+by default. Its runtime and native addon ship with the desktop application; the
+standalone SEA remains available for headless installations. Both hosts share
+the same discovery, catalog, and terminal storage. See the
+[desktop guide](../desktop/README.md#local-agent) for the toggle and lifecycle.
+
+## Local workspace catalog
+
+The daemon stores workspaces, worktrees, and ordered directory bindings in
+`<daemon directory>/catalog.db`, using SeaORM through the Rust addon. Migrations
+and a local Team/Machine context initialize only after the daemon owns discovery.
+That context persists across restarts and enables standalone use without an
+account or organization. It is separate from the central server's database.
+
+The authenticated IPC connection supports these methods:
+
+| Method | Parameters | Result |
+| --- | --- | --- |
+| `catalogList` | none | Local context and all workspaces/worktrees |
+| `workspaceCreate` | `name`, `directories` | Workspace with its automatic main Worktree |
+| `workspaceUpdate` | `workspaceId`, `name`, `directories` | Workspace with its updated main context |
+| `workspaceDelete` | `workspaceId` | Empty result; rejects active Sessions |
+| `workspaceSessionCreate` | `workspaceId` | Session ID, Workspace ID, and its generated Worktree |
+| `workspaceSessionDestroy` | `sessionId` | Empty result after removing the Session's disposable checkouts |
+
+`catalog-protocol.ts` reuses DTOs generated from the Rust binding. IDs remain
+decimal strings, including values above JavaScript's safe integer range.
+Each directory contains only `path`. Creating or updating a Workspace requires at
+least one unique absolute existing directory. Order is preserved and the first
+path is the default. Workspace creation atomically creates its permanent main
+Worktree from these paths. There are no independent Worktree mutation methods.
+Deleting a Workspace leaves its configured source directories on disk. Successful mutations broadcast `catalogChanged` to
+authenticated clients. Unauthenticated clients cannot read, mutate, or observe
+the catalog.
+
+Electron exposes Workspace operations as `window.deskfleet.catalog` through the
+existing authenticated connection. Worktrees are read-only contexts in the UI.
+Managed Session creation derives detached Git worktrees from committed HEADs and
+maps each directory, including subdirectories, into them. Session destruction
+removes those generated checkouts (including local changes) and their catalog
+record. Ownership manifests beneath `session-worktrees/` allow explicit cleanup
+after daemon restart. Source checkouts are never removed. Non-Git directories
+remain usable in the main context; isolated Sessions require Git-backed paths.
+ Catalog data survives closing Electron and restarting
+the daemon. Local IDs belong to this database; future enrollment/synchronization
+must not merge them with independent databases by integer equality.
 
 ## Codex through ACP
 
@@ -65,6 +121,8 @@ After `mise run install`, check ACP initialization or run one prompt from source
 ```sh
 mise exec -- node apps/daemon/src/main.ts agent codex --check
 mise exec -- node apps/daemon/src/main.ts agent codex --cwd /path/to/repository --prompt 'Explain this repository'
+# With the daemon running and a Git-backed Workspace already configured:
+mise exec -- node apps/daemon/src/main.ts agent codex --workspace-id 1 --prompt 'Explain this repository'
 ```
 
 `--check` initializes ACP and exits without creating a session or sending a
@@ -81,9 +139,13 @@ Agent configuration uses these common options:
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` in the environment.
-`--cwd` sets the ACP session's working directory and defaults to the current
-directory. The returned `sessionId` is the provider's session ID; this command
-does not register a deskfleet Worktree or AgentSession.
+`--cwd` sets an unmanaged ACP session's working directory and defaults to the
+current directory. `--workspace-id` instead allocates a managed Session through
+the running daemon; these flags are mutually exclusive. It uses the generated
+Worktree's first directory as cwd and destroys that Session after the provider
+process closes, including initialization or prompt failure. The provider's
+`sessionId` remains distinct from the bigint database Session ID. Closing the
+Electron client does not destroy the Session.
 
 The CLI cancels permission requests and emits `permission_cancelled` events.
 It has no approval UI; prompts requiring approval cannot proceed through it.

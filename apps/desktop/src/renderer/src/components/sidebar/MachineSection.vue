@@ -10,21 +10,30 @@ import {
 } from "@lucide/vue"
 import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import { useRouter } from "vue-router"
+import { RouterLink, useRouter } from "vue-router"
 import { intlLocale, type AppLocale } from "../../../../shared/i18n.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
+import { useWorktreeLabel } from "../../composables/useWorktreeLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import IconButton from "../common/IconButton.vue"
+import WorkspaceCreateForm from "../catalog/WorkspaceCreateForm.vue"
 import TreeLink from "./TreeLink.vue"
 
 const props = defineProps<{ machine: MachineSummary }>()
 const { t, locale } = useI18n()
+const worktreeLabel = useWorktreeLabel()
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const router = useRouter()
 const creating = ref(false)
 const createError = ref<string | null>(null)
+const addingWorkspace = ref(false)
+
+async function workspaceCreated(id: string): Promise<void> {
+  addingWorkspace.value = false
+  await router.push({ name: "workspace", params: { workspaceId: id } })
+}
 
 async function createTerminal(): Promise<void> {
   if (props.machine.id !== "local-daemon" || creating.value) return
@@ -79,10 +88,11 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
           :disabled="creating"
           @click="createTerminal"
         />
-        <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" placeholder />
+        <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="!machine.local" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = !addingWorkspace" />
       </div>
     </div>
     <p v-if="createError" role="alert" class="px-2.5 text-xs text-red-500">{{ createError }}</p>
+    <WorkspaceCreateForm v-if="addingWorkspace && machine.local" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
     <ul v-if="!collapsed" :id="listId">
       <li v-if="machine.desktop || machine.id === 'local-daemon'">
@@ -102,10 +112,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
       <li v-for="workspace in machine.workspaces" :key="workspace.id">
         <div class="group flex h-8 items-center gap-2.5 pl-2.5 pr-1 text-ui-text-muted">
           <Folder :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-          <span class="min-w-0 flex-1 truncate">{{ workspace.name }}</span>
-          <div v-if="machine.online" class="flex op-0 group-hover:op-100 group-focus-within:op-100">
-            <IconButton :icon="SquareTerminal" :label="t('terminal.new')" placeholder />
-          </div>
+          <RouterLink :to="{ name: 'workspace', params: { workspaceId: workspace.id } }" class="min-w-0 flex-1 truncate hover:text-ui-text">{{ workspace.name }}</RouterLink>
         </div>
         <ul>
           <li v-for="terminal in workspace.terminals" :key="terminal.id">
@@ -115,7 +122,7 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
             <TreeLink
               :to="{ name: 'worktree', params: { worktreeId: worktree.id } }"
               :icon="FolderTree"
-              :label="worktree.name"
+              :label="worktreeLabel(worktree)"
               :depth="1"
             />
             <ul>

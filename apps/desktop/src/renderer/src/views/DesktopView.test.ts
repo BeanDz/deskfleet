@@ -105,9 +105,9 @@ test("reports unsupported capture, missing displays, and incompatible codecs", a
   expect(button(incompatible, "Connect").attributes("disabled")).toBeDefined()
 })
 
-test("sample machine browsing never starts a real daemon connection", async () => {
+test("an unknown machine never starts a real daemon connection", async () => {
   const wrapper = await mountDesktop("machine-development-box")
-  expect(wrapper.get('[role="status"]').text()).toBe("Remote desktop is not available yet.")
+  expect(wrapper.get('[role="status"]').text()).toBe("This machine does not exist.")
   expect(button(wrapper, "Connect")).toBeUndefined()
   expect(mock.api.target).not.toHaveBeenCalled()
   expect(mock.api.offer).not.toHaveBeenCalled()

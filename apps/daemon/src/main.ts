@@ -45,14 +45,16 @@ async function main() {
   }
 
   const daemon = await startDaemon(port, { controlDirectory: daemonControlDirectory() })
-  const shutdown = () => {
-    process.off("SIGINT", shutdown)
-    process.off("SIGTERM", shutdown)
-    void daemon.close().catch(fail)
-  }
+  const shutdown = () => { void daemon.close() }
   process.once("SIGINT", shutdown)
   process.once("SIGTERM", shutdown)
   console.log(JSON.stringify({ event: "ready", address: daemon.address }))
+  try {
+    await daemon.closed
+  } finally {
+    process.off("SIGINT", shutdown)
+    process.off("SIGTERM", shutdown)
+  }
 }
 
 void main().catch(fail)

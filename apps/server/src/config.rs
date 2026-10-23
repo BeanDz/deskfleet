@@ -1,4 +1,4 @@
-//! Startup configuration for the HTTP listener.
+//! Startup configuration for the HTTP listener and catalog database.
 
 use std::{env, io, net::SocketAddr};
 
@@ -6,10 +6,11 @@ use std::{env, io, net::SocketAddr};
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
+    pub database_url: String,
 }
 
 impl ServerConfig {
-    /// Read `DESKFLEET_BIND_ADDR`, defaulting to `127.0.0.1:8080`.
+    /// Read the listener address and `DATABASE_URL` for the SQLite catalog.
     pub fn from_env() -> io::Result<Self> {
         let value = match env::var("DESKFLEET_BIND_ADDR") {
             Ok(value) => value,
@@ -24,6 +25,22 @@ impl ServerConfig {
 
         Ok(Self {
             bind_addr: parse_bind_addr(&value)?,
+            database_url: match env::var("DATABASE_URL") {
+                Ok(value) if !value.is_empty() => value,
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "DATABASE_URL must not be empty",
+                    ));
+                }
+                Err(env::VarError::NotPresent) => "sqlite://deskfleet.db?mode=rwc".to_owned(),
+                Err(env::VarError::NotUnicode(_)) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "DATABASE_URL must contain valid Unicode",
+                    ));
+                }
+            },
         })
     }
 }

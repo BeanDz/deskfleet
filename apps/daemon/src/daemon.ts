@@ -28,34 +28,45 @@ export async function startDaemon(port = 0, options: { controlDirectory?: string
   const address = server.address() as AddressInfo
 
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined
+  let resolveClosed!: () => void
+  let rejectClosed!: (error: unknown) => void
+  const closed = new Promise<void>((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject })
+  // Callers can await either close() or closed without an unhandled rejection.
+  void closed.catch(() => {})
+  let closing = false
+  const close = (): Promise<void> => {
+    if (!closing) {
+      closing = true
+      void (async () => {
+        const failures: unknown[] = []
+        for (const cleanup of [
+          () => control?.stop(),
+          () => peers.closeAll(),
+          () => terminals.close(),
+          () => server[Symbol.asyncDispose](),
+          () => control?.close(),
+        ]) {
+          try { await cleanup() } catch (error) { failures.push(error) }
+        }
+        if (failures.length) throw new AggregateError(failures, "Daemon shutdown failed")
+      })().then(resolveClosed, rejectClosed)
+    }
+    return closed
+  }
   try {
-    control = await startControlServer(peers, controlDirectory, undefined, terminals)
+    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() })
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), terminals.close(), server[Symbol.asyncDispose]()])
     const failures = cleanup.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError([error, ...failures], "Daemon startup and cleanup failed", { cause: error })
     throw error
   }
-  let closing: Promise<void> | undefined
-
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,
     terminals,
-    close: () => closing ??= (async () => {
-      try {
-        await control?.close()
-      } finally {
-        try {
-          await peers.closeAll()
-        } finally {
-          try {
-            await terminals.close()
-          } finally {
-            await server[Symbol.asyncDispose]()
-          }
-        }
-      }
-    })(),
+    /** Completes after discovery and all native/server resources have closed. */
+    closed,
+    close,
   }
 }

@@ -42,7 +42,9 @@ async function terminateElectron(child: ChildProcess | null): Promise<void> {
   const exited = waitForExit(child)
   if (process.platform === "win32") {
     await new Promise((resolveKill) => {
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+      // The detached local Agent shares this executable but has its own lifetime.
+      // Killing the process tree would stop it on every desktop rebuild.
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/f"], {
         stdio: "ignore",
         windowsHide: true
       })

@@ -1,35 +1,29 @@
-use std::collections::HashSet;
-
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// A named directory on the machine that owns the worktree.
+/// A directory on the machine that owns the workspace.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DirectoryBinding {
-    pub name: String,
     /// A machine-local path; it must not be interpreted on the receiving host.
     pub path: String,
 }
 
-/// A nonempty collection of directories with distinct names.
+/// A nonempty ordered collection of directories; the first is the default.
 ///
 /// Construction and deserialization enforce the same structural rules. Paths
-/// need not share a parent directory or repository, and aliases may reference
-/// the same physical checkout. Filesystem validation belongs to the daemon.
+/// need not share a parent directory or repository. Filesystem validation
+/// belongs to the daemon.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "Vec<DirectoryBinding>", into = "Vec<DirectoryBinding>")]
 pub struct DirectoryBindings(Vec<DirectoryBinding>);
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum DirectoryBindingsError {
-    #[error("a worktree must contain at least one directory binding")]
+    #[error("a workspace must contain at least one directory")]
     Empty,
-    #[error("directory binding {index} has an empty name")]
-    EmptyName { index: usize },
-    #[error("directory binding {name:?} has an empty path")]
-    EmptyPath { name: String },
-    #[error("directory binding name {name:?} is duplicated")]
-    DuplicateName { name: String },
+    #[error("directory {index} has an empty path")]
+    EmptyPath { index: usize },
 }
 
 impl DirectoryBindings {
@@ -39,6 +33,11 @@ impl DirectoryBindings {
 
     pub fn as_slice(&self) -> &[DirectoryBinding] {
         &self.0
+    }
+
+    /// The first configured directory is the default working directory.
+    pub fn default_directory(&self) -> &DirectoryBinding {
+        &self.0[0]
     }
 }
 
@@ -50,20 +49,9 @@ impl TryFrom<Vec<DirectoryBinding>> for DirectoryBindings {
             return Err(DirectoryBindingsError::Empty);
         }
 
-        let mut names = HashSet::with_capacity(bindings.len());
         for (index, binding) in bindings.iter().enumerate() {
-            if binding.name.trim().is_empty() {
-                return Err(DirectoryBindingsError::EmptyName { index });
-            }
             if binding.path.is_empty() {
-                return Err(DirectoryBindingsError::EmptyPath {
-                    name: binding.name.clone(),
-                });
-            }
-            if !names.insert(&binding.name) {
-                return Err(DirectoryBindingsError::DuplicateName {
-                    name: binding.name.clone(),
-                });
+                return Err(DirectoryBindingsError::EmptyPath { index });
             }
         }
 
@@ -85,13 +73,14 @@ mod tests {
     #[test]
     fn unrelated_directory_roots_round_trip_without_local_path_interpretation() {
         let json = json!([
-            {"name": "frontend", "path": "C:\\code\\web"},
-            {"name": "backend", "path": "D:\\services\\api"}
+            {"path": "C:\\code\\web"},
+            {"path": "D:\\services\\api"}
         ]);
 
         let bindings: DirectoryBindings = serde_json::from_value(json.clone()).unwrap();
 
         assert_eq!(bindings.as_slice()[1].path, "D:\\services\\api");
+        assert_eq!(bindings.default_directory().path, "C:\\code\\web");
         assert_eq!(serde_json::to_value(bindings).unwrap(), json);
     }
 
@@ -99,12 +88,8 @@ mod tests {
     fn decoding_cannot_bypass_directory_set_invariants() {
         for invalid in [
             json!([]),
-            json!([{"name": "", "path": "/code/web"}]),
-            json!([{"name": "frontend", "path": ""}]),
-            json!([
-                {"name": "frontend", "path": "/code/web"},
-                {"name": "frontend", "path": "/code/api"}
-            ]),
+            json!([{"path": ""}]),
+            json!([{"name": "obsolete", "path": "/code/web"}]),
         ] {
             assert!(serde_json::from_value::<DirectoryBindings>(invalid).is_err());
         }

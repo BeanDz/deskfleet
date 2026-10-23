@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia"
-import { onMounted, watch } from "vue"
+import { onBeforeUnmount, onMounted, watch } from "vue"
 import { RouterView } from "vue-router"
 import DetailsPanel from "./components/details/DetailsPanel.vue"
 import AppSidebar from "./components/sidebar/AppSidebar.vue"
@@ -12,7 +12,18 @@ const { sidebarOpen, detailsOpen } = storeToRefs(useLayoutStore())
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 watch(() => fleet.localDesktopTarget.online, (online) => { if (online) void terminals.refresh() })
-onMounted(() => { void fleet.refreshLocalDesktop() })
+const refresh = () => { void fleet.refreshLocal() }
+const unsubscribeSettings = window.deskfleet.settings.onChanged(({ status }) => {
+  if (status === "running" || status === "stopped" || status === "error") {
+    refresh()
+    void terminals.refresh()
+  }
+})
+onMounted(() => { refresh(); window.addEventListener("focus", refresh) })
+onBeforeUnmount(() => {
+  window.removeEventListener("focus", refresh)
+  unsubscribeSettings()
+})
 </script>
 
 <template>

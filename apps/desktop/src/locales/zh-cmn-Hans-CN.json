@@ -17,6 +17,24 @@
     "settings": "设置",
     "team": "切换团队"
   },
+  "settings": {
+    "localAgent": "本地 Agent",
+    "enableLocalAgent": "启用本地 Agent",
+    "autoStart": "打开 deskfleet 时自动启动本地 Agent。",
+    "keepRunning": "退出 deskfleet 后，本地 Agent 会继续运行。",
+    "stopEffect": "关闭此开关会停止本地 Agent 及其正在运行的终端。",
+    "loading": "正在加载设置…",
+    "unavailable": "无法加载设置",
+    "stopped": "已停止",
+    "starting": "正在启动…",
+    "running": "运行中",
+    "stopping": "正在停止…",
+    "error": "本地 Agent 出错",
+    "runningSeparately": "本地 Agent 由其他方式启动，目前仍在运行。",
+    "retryStart": "重试启动",
+    "retryStop": "重试停止",
+    "retryLoad": "重新加载设置"
+  },
   "machine": {
     "offline": "离线",
     "lastSeen": "最后在线：{time}",
@@ -36,7 +54,12 @@
     "noSessions": "还没有智能体会话。",
     "newSession": "新会话",
     "terminals": "终端",
-    "noTerminals": "没有终端。"
+    "noTerminals": "没有终端。",
+    "openTerminal": "打开终端",
+    "openTerminalAt": "在 {path} 中打开终端",
+    "main": "主工作树",
+    "sessionLabel": "会话 {id}",
+    "manageWorkspace": "管理工作区目录"
   },
   "session": {
     "notFound": "该会话不存在。",
@@ -128,10 +151,43 @@
       "deleted": "已删除",
       "renamed": "已重命名",
       "untracked": "未跟踪"
-    }
+    },
+    "gitUnknown": "尚未检查 Git 状态。"
   },
   "tray": {
     "show": "显示 deskfleet",
     "quit": "退出 deskfleet"
+  },
+  "catalog": {
+    "local": "本地",
+    "workspaces": "工作区",
+    "loading": "正在加载工作区…",
+    "refresh": "刷新",
+    "offline": "本机守护进程不可用，请刷新以重新连接。",
+    "workspaceName": "工作区名称",
+    "directoryPath": "目录 {number} 路径",
+    "absolutePath": "本机上的绝对路径",
+    "removeDirectory": "移除目录 {number}",
+    "addDirectory": "添加目录",
+    "nameRequired": "请输入名称。",
+    "directoriesRequired": "请至少填写一个目录路径。",
+    "create": "创建",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "confirmDelete": "确认删除",
+    "defaultDirectory": "默认目录",
+    "defaultDirectoryHint": "第一个目录为默认目录，可上下移动路径以调整顺序。",
+    "moveDirectoryUp": "上移目录 {number}",
+    "moveDirectoryDown": "下移目录 {number}"
+  },
+  "workspace": {
+    "notFound": "该工作区不存在。",
+    "worktrees": "工作树",
+    "directoryCount": "{count} 个目录",
+    "delete": "删除工作区",
+    "deleteQuestion": "删除工作区“{name}”及其登记记录？磁盘上的目录将保留。",
+    "edit": "编辑工作区",
+    "openDefaultTerminal": "在默认目录打开终端"
   }
 }

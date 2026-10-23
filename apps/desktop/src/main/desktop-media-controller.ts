@@ -8,13 +8,19 @@ import { DaemonClient } from "./daemon-client.ts"
 export class DesktopMediaController {
   readonly #emit: (event: DesktopEvent) => void
   readonly #emitTerminal: (event: TerminalSessionEvent) => void
+  readonly #emitCatalog: () => void
   readonly #sessions = new Set<string>()
   #connection: Promise<DaemonClient> | null = null
   #disposed = false
 
-  constructor(emit: (event: DesktopEvent) => void, emitTerminal: (event: TerminalSessionEvent) => void = () => {}) {
+  constructor(
+    emit: (event: DesktopEvent) => void,
+    emitTerminal: (event: TerminalSessionEvent) => void = () => {},
+    emitCatalog: () => void = () => {},
+  ) {
     this.#emit = emit
     this.#emitTerminal = emitTerminal
+    this.#emitCatalog = emitCatalog
   }
 
   async invoke(method: string, params: unknown): Promise<unknown> {
@@ -26,7 +32,11 @@ export class DesktopMediaController {
         return (await this.#connect()).call("capabilities", {})
       case "terminalList":
       case "terminalDial":
-      case "terminalHangup": {
+      case "terminalHangup":
+      case "catalogList":
+      case "workspaceCreate":
+      case "workspaceUpdate":
+      case "workspaceDelete": {
         const request = validateControlParams(method, params)
         return (await this.#connect()).call(method, request)
       }
@@ -86,7 +96,8 @@ export class DesktopMediaController {
     const connection = DaemonClient.connect(
       (event) => {
         if (this.#connection !== connection) return
-        if (event.kind === "terminalChanged" || event.kind === "terminalHungup") this.#emitTerminal(event)
+        if (event.kind === "catalogChanged") this.#emitCatalog()
+        else if (event.kind === "terminalChanged" || event.kind === "terminalHungup") this.#emitTerminal(event)
         else if (this.#sessions.has(event.sessionId)) this.#emit(event)
       },
       (error) => {

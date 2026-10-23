@@ -37,19 +37,35 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 ## Interface layout
 
-`useFleetStore` serves sample data from
-`src/renderer/src/stores/placeholder-fleet.ts`. The team switcher, settings,
-workspace creation, target and provider pickers, Send, file diffs, and session
-transcript are placeholders. The real local machine is discovered separately
-through the daemon; its desktop route supports live WebRTC playback and its
-**New terminal** action opens a native PTY over a WebRTC DataChannel. Sample
-machines and their workspace/worktree terminals remain placeholders.
+`useFleetStore` loads the local daemon's persistent catalog through authenticated
+IPC. The desktop starts its bundled local Agent by default; use **Add workspace**
+beside the local machine. Supply its name and at least one absolute directory path.
+Directories have no names; the first is the default. Move paths up or down to
+change their order and default. Creating a Workspace creates its main Worktree
+automatically. Edit the Workspace to change its name and directories. Worktrees
+are read-only execution contexts: the main one uses actual configured directories,
+and Session-owned ones are created and removed by Session lifecycle operations.
+Deleting a Workspace removes its catalog records, leaving source directories
+untouched; active Sessions prevent deletion. The UI refreshes on catalog changes,
+window focus, and the explicit refresh action; failures retain the displayed
+catalog and show an error.
+
+The footer identifies this as local mode, without account or organization
+membership. Database Machine IDs remain distinct from the `local-daemon`
+connection target. The desktop route supports live WebRTC playback; **New
+terminal** opens a native PTY, and **Open terminal here** on a worktree directory
+starts one at that path. Those terminals retain machine scope. The application
+does not display sample machines as live resources.
+
+Accounts, organization switching, remote machine registration, target
+and provider pickers, Send, Git inspection, file diffs, and session transcripts
+remain unimplemented.
 Placeholder controls are labelled, `aria-disabled`, and do nothing. They use
 `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
 
 The window is frameless and has three columns. The sidebar holds the window
 toolbar (sidebar toggle, back, forward), the New session action, the resource
-tree, and a team footer. The main pane shows the routed view under a header row
+tree, and a local-mode footer. The main pane shows the routed view under a header row
 that takes over the toolbar while the sidebar is hidden. The details panel on the
 right describes the current route's resource; its header toggle and its tab
 persist per device. The macOS traffic lights sit in the sidebar's toolbar row.
@@ -66,12 +82,13 @@ machines start collapsed and report when they were last seen.
 | Route | View |
 | --- | --- |
 | `/` | New session: a composer targeting a machine, workspace, worktree, and provider |
+| `/workspaces/:workspaceId` | Workspace name, ordered directories, default-directory terminal, and deletion |
 | `/worktrees/:worktreeId` | Directory bindings, agent sessions, and terminals of one worktree |
 | `/sessions/:sessionId` | A session's title, location, and composer |
 | `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
 | `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
-| `/settings` | `PlaceholderView` |
+| `/settings` | Local Agent startup preference, run state, and retry |
 
 A worktree page's New session action makes that worktree the new session's
 target.
@@ -97,8 +114,7 @@ tabs and supports dialing new or existing shells, live input/output, resize,
 reattachment, and explicit hangup. Switching tabs, leaving the view or quitting
 Electron leaves shells running. Closing a tab hangs up only its shell and removes
 its daemon history. Daemon shutdown terminates processes while preserving their
-history; after restart they appear interrupted and read-only. Sample terminals display a
-dimmed notice with input disabled and the cursor hidden. xterm.js uses an injected
+history; after restart they appear interrupted and read-only. xterm.js uses an injected
 stylesheet, which the renderer CSP's `style-src 'unsafe-inline'` permits. It
 loads only with the terminal route's chunk.
 
@@ -112,8 +128,8 @@ the remaining cross-machine signaling work.
 
 ## Desktop playback
 
-Run `mise run daemon:dev` in another terminal, then open **Remote desktop** under
-the real local machine. Select a display and a codec supported by both the native
+With the local Agent running, open **Remote desktop** under the real local
+machine. Select a display and a codec supported by both the native
 encoder and Chromium, then connect. System audio is optional and defaults off.
 The video surface hides Chromium's playback controls; the page provides its own
 fullscreen action. Disconnect or leave the route to release capture; the daemon
@@ -122,8 +138,7 @@ keeps running.
 Electron's main process discovers the local daemon through
 `~/.deskfleet/daemon.json`. Set `DESKFLEET_DAEMON_DIRECTORY` in both processes to
 use an isolated instance. The preload carries signaling and control only;
-Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Sample catalog
-machines are never mapped to the local daemon. Central server signaling and
+Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Central server signaling and
 keyboard/mouse control are not connected yet.
 
 See [media integration](../../agents/docs/media.md) for supported capture
@@ -147,6 +162,29 @@ The process exits only through:
 `src/main/lifecycle.ts` owns this rule. To exit the process, call its `quit()`
 rather than `app.quit()`. A second launch shows the existing window instead of
 starting another client.
+
+## Local Agent
+
+**Settings → Local Agent** is enabled by default. The main process stores
+`localAgentEnabled` in `settings.json` under Electron's `userData` directory.
+Enabling it starts the bundled daemon library in a detached Electron background
+process, or reuses the authenticated daemon already serving the same discovery
+directory. There is no separate Node.js or daemon installation to configure.
+The background process has no window, tray icon, or client single-instance lock.
+Its Chromium data is separate from the client's profile.
+
+Turning the switch off requests authenticated daemon shutdown, including active
+terminal processes, and waits for cleanup. Workspace data and terminal history
+remain on disk. Turning it back on reconnects the UI to the new daemon. A failed
+start or stop appears in Settings with a retry action. Disabled startup does not
+terminate a daemon started separately; Settings reports that case explicitly.
+
+Closing or quitting the client only disconnects its IPC connection. The daemon
+keeps running, including across development client reloads. After changing daemon
+code during development, toggle the local Agent off and on to load the new bundle.
+Logs go to `<daemon directory>/daemon.log`; discovery, SQLite data, and terminal
+history retain their usual locations. `DESKFLEET_DAEMON_DIRECTORY` selects an
+isolated instance for both the client and its bundled daemon.
 
 ## Localization
 
@@ -204,7 +242,11 @@ mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host plat
 ```
 
 `electron-builder.yml` configures packaging. Vite bundles every dependency into
-`out/`, so the app has no runtime `node_modules`. Packages enable ASAR integrity
+`out/`, including the `@deskfleet/daemon` library. The native addon is copied next
+to the main bundle and unpacked from ASAR for loading; installer builds use the
+release addon. The app has no runtime `node_modules` or external Node dependency.
+The same installed executable hosts the daemon with `--deskfleet-daemon`, without
+using Electron's `RunAsNode` mode. Packages enable ASAR integrity
 validation and disable the `RunAsNode`, `NODE_OPTIONS`, and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
@@ -222,7 +264,20 @@ mise run check:desktop-types  # vue-tsc over all processes, configs, and scripts
 mise run check:desktop        # Vitest: main/shared in Node, renderer in happy-dom
 mise run desktop:smoke-media  # real Chromium/native H.264 decode; no screen capture
 mise run desktop:smoke-terminal  # real PTY I/O, resize, and reattachment over WebRTC
+mise run desktop:smoke-catalog  # built renderer CRUD, SQLite persistence, and directory shell cwd
+mise run desktop:smoke-local-agent  # Settings toggle, daemon reuse, and independent process lifetime
 ```
+
+The catalog smoke uses an isolated daemon database and Electron profiles. It
+drives the production Vapor Workspace form and preload, changes the default by
+reordering paths, opens a real shell in that directory, and reopens the client to
+verify the saved catalog before deleting it.
+
+The local Agent smoke uses a temporary profile and daemon directory with the real
+built renderer, preload, Settings controller, and bundled daemon host. It verifies
+default startup, switching off and on, catalog refresh, terminal interruption on
+shutdown, terminal survival after client exit, reuse by another client, and the
+persisted disabled preference on a third launch.
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The
 package therefore installs TypeScript 6 under the `typescript` name. The root

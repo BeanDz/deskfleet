@@ -2,6 +2,8 @@ appId: io.github.yet-another-ai.deskfleet
 # productName and the version come from package.json.
 executableName: deskfleet
 asar: true
+asarUnpack:
+  - out/main/deskfleet.node
 # Vite bundles every renderer and main-process dependency into out/.
 npmRebuild: false
 # Fuses and ASAR integrity harden loading but do not replace platform code signing.

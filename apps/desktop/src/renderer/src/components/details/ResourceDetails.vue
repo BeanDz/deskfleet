@@ -2,11 +2,13 @@
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import type { RouteResource } from "../../composables/useRouteResource.ts"
+import { useWorktreeLabel } from "../../composables/useWorktreeLabel.ts"
 import type { MachineSummary, WorktreeSummary } from "../../stores/fleet-types.ts"
 import DetailsList, { type DetailsRow } from "./DetailsList.vue"
 
 const props = defineProps<{ resource: RouteResource }>()
 const { t } = useI18n()
+const worktreeLabel = useWorktreeLabel()
 
 function machineStatus(machine: MachineSummary): string {
   return machine.online ? t("panel.online") : t("machine.offline")
@@ -16,6 +18,8 @@ const rows = computed<DetailsRow[]>(() => {
   const resource = props.resource
   const machine = { label: t("panel.machine"), value: resource.machine.name }
   switch (resource.kind) {
+    case "workspace":
+      return [machine, { label: t("panel.status"), value: machineStatus(resource.machine) }]
     case "worktree":
       return [
         machine,
@@ -27,7 +31,7 @@ const rows = computed<DetailsRow[]>(() => {
         { label: t("panel.provider"), value: resource.session.provider },
         machine,
         { label: t("panel.workspace"), value: resource.workspace.name },
-        { label: t("panel.worktree"), value: resource.worktree.name },
+        { label: t("panel.worktree"), value: worktreeLabel(resource.worktree) },
       ]
     case "terminal": {
       const scope = resource.worktree
@@ -39,7 +43,7 @@ const rows = computed<DetailsRow[]>(() => {
         { label: t("panel.scope"), value: scope },
         machine,
         ...(resource.workspace ? [{ label: t("panel.workspace"), value: resource.workspace.name }] : []),
-        ...(resource.worktree ? [{ label: t("panel.worktree"), value: resource.worktree.name }] : []),
+        ...(resource.worktree ? [{ label: t("panel.worktree"), value: worktreeLabel(resource.worktree) }] : []),
         { label: t("panel.cwd"), value: resource.terminal.cwd, code: true },
       ]
     }
@@ -58,8 +62,10 @@ const rows = computed<DetailsRow[]>(() => {
 const title = computed(() => {
   const resource = props.resource
   switch (resource.kind) {
+    case "workspace":
+      return resource.workspace.name
     case "worktree":
-      return resource.worktree.name
+      return worktreeLabel(resource.worktree)
     case "session":
       return resource.session.title
     case "terminal":
@@ -70,7 +76,7 @@ const title = computed(() => {
 })
 
 const worktree = computed<WorktreeSummary | undefined>(() =>
-  props.resource.kind === "desktop" ? undefined : props.resource.worktree,
+  props.resource.kind === "desktop" || props.resource.kind === "workspace" ? undefined : props.resource.worktree,
 )
 </script>
 
@@ -82,15 +88,15 @@ const worktree = computed<WorktreeSummary | undefined>(() =>
     <section v-if="worktree">
       <h3 class="ui-section-title">{{ t("panel.directories") }}</h3>
       <ul class="flex flex-col gap-3">
-        <li v-for="directory in worktree.directories" :key="directory.name" class="text-[13px]">
-          <div class="font-medium">{{ directory.name }}</div>
+        <li v-for="(directory, index) in worktree.directories" :key="index" class="text-[13px]">
+          <div v-if="index === 0" class="mb-1 text-xs text-ui-text-muted">{{ t("catalog.defaultDirectory") }}</div>
           <div class="break-all font-mono text-xs text-ui-text-muted select-text">
             {{ directory.path }}
           </div>
           <div v-if="directory.git" class="mt-0.5 font-mono text-xs text-ui-text-faint select-text">
             {{ directory.git.branch }} · {{ directory.git.head }}
           </div>
-          <div v-else class="mt-0.5 text-xs text-ui-text-faint">{{ t("panel.notGit") }}</div>
+          <div v-else-if="directory.git === null" class="mt-0.5 text-xs text-ui-text-faint">{{ t("panel.notGit") }}</div>
         </li>
       </ul>
     </section>

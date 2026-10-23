@@ -10,5 +10,6 @@ mod resources;
 pub use directories::{DirectoryBinding, DirectoryBindings, DirectoryBindingsError};
 pub use ids::{AgentSessionId, MachineId, TeamId, TerminalSessionId, WorkspaceId, WorktreeId};
 pub use resources::{
-    AgentSession, Machine, Team, TerminalScope, TerminalSession, Workspace, Worktree,
+    AgentSession, Machine, Team, TerminalScope, TerminalSession, Workspace, WorkspaceSession,
+    Worktree,
 };

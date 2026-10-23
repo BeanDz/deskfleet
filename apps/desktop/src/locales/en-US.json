@@ -17,6 +17,24 @@
     "settings": "Settings",
     "team": "Switch team"
   },
+  "settings": {
+    "localAgent": "Local Agent",
+    "enableLocalAgent": "Enable local Agent",
+    "autoStart": "Start the local Agent automatically when deskfleet opens.",
+    "keepRunning": "Quitting deskfleet leaves the local Agent running.",
+    "stopEffect": "Turning this off stops the local Agent and its active terminals.",
+    "loading": "Loading settings…",
+    "unavailable": "Settings unavailable",
+    "stopped": "Stopped",
+    "starting": "Starting…",
+    "running": "Running",
+    "stopping": "Stopping…",
+    "error": "Local Agent failed",
+    "runningSeparately": "The local Agent was started separately and is still running.",
+    "retryStart": "Retry start",
+    "retryStop": "Retry stop",
+    "retryLoad": "Reload settings"
+  },
   "machine": {
     "offline": "Offline",
     "lastSeen": "Last seen {time}",
@@ -36,7 +54,12 @@
     "noSessions": "No agent sessions yet.",
     "newSession": "New session",
     "terminals": "Terminals",
-    "noTerminals": "No terminals."
+    "noTerminals": "No terminals.",
+    "openTerminal": "Open terminal",
+    "openTerminalAt": "Open terminal in {path}",
+    "main": "Main worktree",
+    "sessionLabel": "Session {id}",
+    "manageWorkspace": "Manage workspace directories"
   },
   "session": {
     "notFound": "This session does not exist.",
@@ -128,10 +151,43 @@
       "deleted": "Deleted",
       "renamed": "Renamed",
       "untracked": "Untracked"
-    }
+    },
+    "gitUnknown": "Git state has not been inspected."
   },
   "tray": {
     "show": "Show deskfleet",
     "quit": "Quit deskfleet"
+  },
+  "catalog": {
+    "local": "Local",
+    "workspaces": "Workspaces",
+    "loading": "Loading workspaces…",
+    "refresh": "Refresh",
+    "offline": "The local daemon is unavailable. Refresh to reconnect.",
+    "workspaceName": "Workspace name",
+    "directoryPath": "Directory {number} path",
+    "absolutePath": "Absolute path on this machine",
+    "removeDirectory": "Remove directory {number}",
+    "addDirectory": "Add directory",
+    "nameRequired": "Enter a name.",
+    "directoriesRequired": "Enter at least one directory path.",
+    "create": "Create",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "confirmDelete": "Confirm deletion",
+    "defaultDirectory": "Default",
+    "defaultDirectoryHint": "The first directory is the default. Move a path up or down to change the order.",
+    "moveDirectoryUp": "Move directory {number} up",
+    "moveDirectoryDown": "Move directory {number} down"
+  },
+  "workspace": {
+    "notFound": "This workspace does not exist.",
+    "worktrees": "Worktrees",
+    "directoryCount": "{count} directories",
+    "delete": "Delete workspace",
+    "deleteQuestion": "Delete workspace “{name}” and its registration? Its directories remain on disk.",
+    "edit": "Edit workspace",
+    "openDefaultTerminal": "Open terminal in default directory"
   }
 }

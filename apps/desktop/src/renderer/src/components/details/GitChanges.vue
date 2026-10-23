@@ -24,7 +24,7 @@ const statusColor: Record<GitChangeStatus, string> = {
 }
 
 const checkouts = computed(() =>
-  props.worktree.directories.flatMap(({ name, git }) => (git ? [{ name, git }] : [])),
+  props.worktree.directories.flatMap(({ path, git }) => (git ? [{ path, git }] : [])),
 )
 const plainDirectories = computed(() =>
   props.worktree.directories.filter((directory) => directory.git === null),
@@ -42,9 +42,10 @@ function parent(path: string): string {
 
 <template>
   <div class="flex flex-col gap-5">
-    <section v-for="directory in checkouts" :key="directory.name">
+    <p v-if="worktree.directories.some(directory => directory.git === undefined)" class="m-0 text-[13px] text-ui-text-faint">{{ t("panel.gitUnknown") }}</p>
+    <section v-for="(directory, index) in checkouts" :key="index">
       <div class="mb-1.5 flex items-center gap-1.5 text-[13px]">
-        <span class="font-medium">{{ directory.name }}</span>
+        <span class="min-w-0 truncate font-medium" :title="directory.path">{{ directory.path }}</span>
         <span class="flex min-w-0 items-center gap-1 text-xs text-ui-text-muted">
           <GitBranch :size="13" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
           <span class="truncate font-mono">{{ directory.git.branch }}</span>
@@ -84,8 +85,8 @@ function parent(path: string): string {
       </ul>
     </section>
 
-    <section v-for="directory in plainDirectories" :key="directory.name">
-      <div class="mb-1 text-[13px] font-medium">{{ directory.name }}</div>
+    <section v-for="(directory, index) in plainDirectories" :key="index">
+      <div class="mb-1 break-all text-[13px] font-medium">{{ directory.path }}</div>
       <p class="m-0 text-[13px] text-ui-text-faint">{{ t("panel.notGit") }}</p>
     </section>
   </div>

@@ -28,6 +28,11 @@ run = "apm install --frozen"
 description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
 
+[tasks."db:migrate"]
+description = "Run catalog migrations (up by default; accepts status/down arguments)"
+env.DATABASE_URL = "{{ env.DATABASE_URL | default(value='sqlite://deskfleet.db?mode=rwc') }}"
+run = "cargo run -p deskfleet-migration --features cli --locked --"
+
 [tasks.check]
 description = "Run TypeScript and Rust checks, tests, and debug builds"
 depends = ["check:static", "test", "rust:build", "desktop:build"]
@@ -87,7 +92,7 @@ run = "node scripts/smoke-daemon.ts"
 
 [tasks."desktop:dev"]
 description = "Run the Electron desktop app with Vite watchers"
-depends = ["install"]
+depends = ["native:debug"]
 run = "pnpm --filter @deskfleet/desktop dev"
 
 [tasks."desktop:smoke-media"]
@@ -97,7 +102,7 @@ run = ["cargo build -p deskfleet-native --example media_smoke --locked", "node a
 
 [tasks."desktop:build"]
 description = "Build the Electron main, preload, and renderer bundles"
-depends = ["install"]
+depends = ["native:debug"]
 run = "pnpm --filter @deskfleet/desktop build"
 
 [tasks."desktop:smoke-terminal"]
@@ -105,15 +110,30 @@ description = "Verify Chromium terminal I/O and PTY reattachment over WebRTC"
 depends = ["native:debug"]
 run = "node apps/desktop/scripts/smoke-terminal.ts"
 
+[tasks."desktop:smoke-catalog"]
+description = "Verify local catalog forms, persistence, and directory terminals in Electron"
+depends = ["native:debug", "desktop:build"]
+run = "node apps/desktop/scripts/smoke-catalog.ts"
+
+[tasks."desktop:smoke-local-agent"]
+description = "Verify Settings startup, shutdown, and independent local Agent lifetime in Electron"
+depends = ["native:debug", "desktop:build"]
+run = "node apps/desktop/scripts/smoke-local-agent.ts"
+
 [tasks."desktop:package"]
 description = "Package the desktop app as installers for the host platform"
-depends = ["desktop:build"]
+depends = ["desktop:release-build"]
 run = "pnpm --filter @deskfleet/desktop run package"
 
 [tasks."desktop:package:dir"]
 description = "Package the desktop app as an unpacked directory for the host platform"
-depends = ["desktop:build"]
+depends = ["desktop:release-build"]
 run = "pnpm --filter @deskfleet/desktop run package:dir"
+
+[tasks."desktop:release-build"]
+hide = true
+depends = ["native:release"]
+run = "pnpm --filter @deskfleet/desktop build"
 
 [tasks."rust:format"]
 hide = true
@@ -158,7 +178,7 @@ run = "pnpm typecheck"
 
 [tasks."check:desktop-types"]
 hide = true
-depends = ["install"]
+depends = ["native:debug"]
 run = "pnpm --filter @deskfleet/desktop typecheck"
 
 [tasks."check:daemon"]

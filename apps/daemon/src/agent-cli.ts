@@ -1,16 +1,37 @@
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
-import type { AgentConfig } from "./agents/acp.ts"
+import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { codexProvider } from "./agents/codex.ts"
+import { DaemonClient } from "./control-client.ts"
+import type { ManagedWorkspaceSession } from "./session-worktrees.ts"
 
-export async function runAgent(args: string[]) {
+export interface AgentWorkspaceSessions {
+  create(workspaceId: string): Promise<ManagedWorkspaceSession>
+  destroy(sessionId: string): Promise<void>
+  close(): void
+}
+
+async function connectWorkspaceSessions(): Promise<AgentWorkspaceSessions> {
+  const client = await DaemonClient.connect(() => {}, () => {})
+  return {
+    create: workspaceId => client.call("workspaceSessionCreate", { workspaceId }),
+    destroy: async sessionId => { await client.call("workspaceSessionDestroy", { sessionId }) },
+    close: () => client.close(),
+  }
+}
+
+export async function runAgent(args: string[], dependencies: {
+  provider?: AgentProvider
+  workspaceSessions?: () => Promise<AgentWorkspaceSessions>
+} = {}) {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
     options: {
       help: { type: "boolean", short: "h" },
       check: { type: "boolean" },
-      cwd: { type: "string", default: process.cwd() },
+      cwd: { type: "string" },
+      "workspace-id": { type: "string" },
       prompt: { type: "string" },
       name: { type: "string", default: "Codex" },
       "binary-path": { type: "string" },
@@ -18,7 +39,7 @@ export async function runAgent(args: string[]) {
     },
   })
   if (values.help) {
-    console.log("Usage: deskfleet-daemon agent codex [--check | --prompt <text>] [--cwd <directory>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
+    console.log("Usage: deskfleet-daemon agent codex [--check | --prompt <text>] [--cwd <directory> | --workspace-id <id>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
     return
   }
   if (positionals.length !== 1 || positionals[0] !== "codex") {
@@ -26,6 +47,9 @@ export async function runAgent(args: string[]) {
   }
   if (values.check ? values.prompt !== undefined : !values.prompt) {
     throw new Error("choose --check or --prompt <text>")
+  }
+  if (values.cwd !== undefined && values["workspace-id"] !== undefined) {
+    throw new Error("--cwd and --workspace-id are mutually exclusive")
   }
 
   const config: AgentConfig = {
@@ -37,33 +61,53 @@ export async function runAgent(args: string[]) {
       return [value.slice(0, separator), value.slice(separator + 1)]
     })),
   }
-  const agent = await codexProvider.connect(config, {
-    onUpdate: notification => console.log(JSON.stringify({ event: "session_update", ...notification })),
-    requestPermission: async request => {
-      console.log(JSON.stringify({ event: "permission_cancelled", ...request }))
-      return { outcome: { outcome: "cancelled" } }
-    },
-  })
+  const provider = dependencies.provider ?? codexProvider
+  let agent: AgentConnection | undefined
+  let workspaceSessions: AgentWorkspaceSessions | undefined
+  let managed: ManagedWorkspaceSession | undefined
   let sessionId: string | undefined
+  let interrupted = false
   const interrupt = () => {
+    interrupted = true
     process.off("SIGINT", interrupt)
     process.off("SIGTERM", interrupt)
+    if (!agent) return
     const stopping = sessionId ? agent.cancel(sessionId) : agent.close()
     void stopping.catch(error => {
       console.error(error instanceof Error ? error.message : String(error))
       process.exitCode = 1
-      void agent.close()
+      void agent?.close()
     })
   }
   process.once("SIGINT", interrupt)
   process.once("SIGTERM", interrupt)
   try {
-    console.log(JSON.stringify({ event: "initialized", provider: codexProvider.id, name: config.name, ...agent.initialization }))
+    if (values["workspace-id"] !== undefined && !values.check) {
+      workspaceSessions = await (dependencies.workspaceSessions ?? connectWorkspaceSessions)()
+      if (interrupted) return
+      managed = await workspaceSessions.create(values["workspace-id"])
+      if (interrupted) return
+      console.log(JSON.stringify({ event: "workspace_session", ...managed }))
+    }
+    agent = await provider.connect(config, {
+      onUpdate: notification => console.log(JSON.stringify({ event: "session_update", ...notification })),
+      requestPermission: async request => {
+        console.log(JSON.stringify({ event: "permission_cancelled", ...request }))
+        return { outcome: { outcome: "cancelled" } }
+      },
+    })
+    if (interrupted) return
+    console.log(JSON.stringify({ event: "initialized", provider: provider.id, name: config.name, ...agent.initialization }))
     if (values.check) return
 
-    const session = await agent.newSession({ cwd: resolve(values.cwd), mcpServers: [] })
+    const session = await agent.newSession({
+      cwd: managed?.worktree.directories[0]?.path ?? resolve(values.cwd ?? process.cwd()),
+      ...(managed ? { additionalDirectories: managed.worktree.directories.slice(1).map(directory => directory.path) } : {}),
+      mcpServers: [],
+    })
+    if (interrupted) return
     sessionId = session.sessionId
-    console.log(JSON.stringify({ event: "session", provider: codexProvider.id, name: config.name, ...session }))
+    console.log(JSON.stringify({ event: "session", provider: provider.id, name: config.name, ...session }))
     const result = await agent.prompt({
       sessionId,
       prompt: [{ type: "text", text: values.prompt! }],
@@ -72,6 +116,11 @@ export async function runAgent(args: string[]) {
   } finally {
     process.off("SIGINT", interrupt)
     process.off("SIGTERM", interrupt)
-    await agent.close()
+    try {
+      // The prompt ending does not itself destroy the checkout: first await
+      // actual provider process shutdown, including on initialization failures.
+      await agent?.close()
+      if (managed) await workspaceSessions!.destroy(managed.id)
+    } finally { workspaceSessions?.close() }
   }
 }

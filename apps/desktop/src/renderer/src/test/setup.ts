@@ -4,6 +4,18 @@ import type { DeskfleetDesktopApi } from "../../../shared/desktop-api.ts"
 const api: DeskfleetDesktopApi = {
   platform: "linux",
   locale: "en-US",
+  settings: {
+    get: async () => ({ enabled: true, status: "stopped" }),
+    setLocalAgentEnabled: async (enabled) => ({ enabled, status: enabled ? "running" : "stopped" }),
+    onChanged: () => () => {},
+  },
+  catalog: {
+    list: async () => { throw new Error("Daemon unavailable") },
+    createWorkspace: async () => { throw new Error("Daemon unavailable") },
+    updateWorkspace: async () => { throw new Error("Daemon unavailable") },
+    deleteWorkspace: async () => { throw new Error("Daemon unavailable") },
+    onChanged: () => () => {},
+  },
   terminal: {
     list: async () => [],
     dial: async () => { throw new Error("Daemon unavailable") },

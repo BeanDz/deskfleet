@@ -123,3 +123,29 @@ textarea {
   outline: 2px solid var(--ui-color-focus);
   outline-offset: -2px;
 }
+
+.catalog-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--ui-color-border);
+  border-radius: 0.375rem;
+  background: var(--ui-color-canvas);
+  color: var(--ui-color-text);
+  user-select: text;
+}
+
+.catalog-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--ui-color-border);
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.catalog-button:hover:not(:disabled) { background: var(--ui-color-hover); }
+.catalog-button:disabled,
+.catalog-input:disabled { opacity: 0.5; cursor: default; }

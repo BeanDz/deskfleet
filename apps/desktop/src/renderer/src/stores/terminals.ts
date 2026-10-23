@@ -44,9 +44,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     return refreshing
   }
 
-  async function create(cols = 80, rows = 24): Promise<TerminalSummary> {
+  async function create(cols = 80, rows = 24, cwd?: string): Promise<TerminalSummary> {
     error.value = null
-    return remember(await window.deskfleet.terminal.dial({ mode: "create", terminalId: crypto.randomUUID(), cols, rows }))
+    return remember(await window.deskfleet.terminal.dial({ mode: "create", terminalId: crypto.randomUUID(), cols, rows, ...(cwd === undefined ? {} : { cwd }) }))
   }
 
   function attach(sessionId: string, listener: TerminalListener) {

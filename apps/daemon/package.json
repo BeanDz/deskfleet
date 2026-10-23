@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./control-client": "./src/control-client.ts",
+    "./control-discovery": "./src/control-discovery.ts"
+  },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "2.2.2",
     "@agentclientprotocol/sdk": "2.0.1",

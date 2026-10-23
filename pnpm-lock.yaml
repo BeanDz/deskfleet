@@ -35,6 +35,9 @@ importers:
 
   apps/desktop:
     devDependencies:
+      '@deskfleet/daemon':
+        specifier: workspace:*
+        version: link:../daemon
       '@intlify/unplugin-vue-i18n':
         specifier: 11.2.7
         version: 11.2.7(@typescript/typescript6@6.0.2)(supports-color@7.2.0)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vue-i18n@11.4.16(vue@3.6.0-rc.12(@typescript/typescript6@6.0.2)))(vue@3.6.0-rc.12(@typescript/typescript6@6.0.2))

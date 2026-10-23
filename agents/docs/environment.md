@@ -45,9 +45,11 @@ then include the configuration and lockfile changes together.
 | --- | --- |
 | `mise run install` | Install the pnpm workspace from the frozen lockfile |
 | `mise run dev` | Run the Actix Web server |
+| `mise run db:migrate` | Apply catalog migrations; append `-- status` or `-- down` for migration management |
 | `mise run daemon:dev` | Build the debug addon and run the daemon from TypeScript |
 | `mise run desktop:dev` | Run the Electron app with the Vite renderer server and watched main/preload bundles |
 | `mise run desktop:build` | Build the Electron main, preload, and renderer bundles |
+| `mise run desktop:smoke-catalog` | Exercise local catalog forms, persistence, and directory terminals in production Electron |
 | `mise run desktop:package` / `desktop:package:dir` | Package the desktop app with electron-builder as installers or an unpacked directory |
 | `mise run check` | Run static checks, TypeScript and Rust tests, and debug workspace and desktop builds |
 | `mise run check-fast` | Run Rust formatting, dependency usage, Clippy, and tests |

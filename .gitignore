@@ -1,4 +1,8 @@
 /target/
+/deskfleet.db
+/deskfleet.db-shm
+/deskfleet.db-wal
+/deskfleet.db-journal
 **/node_modules/
 **/dist/
 /apps/desktop/out/

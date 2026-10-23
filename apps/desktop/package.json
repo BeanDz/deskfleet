@@ -17,6 +17,7 @@
     "package:dir": "electron-builder --dir --publish never"
   },
   "devDependencies": {
+    "@deskfleet/daemon": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.7",
     "@lucide/vue": "1.59.0",
     "@types/node": "24.19.2",

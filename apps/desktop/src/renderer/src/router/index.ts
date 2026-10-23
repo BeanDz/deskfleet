@@ -17,6 +17,12 @@ export const router = createRouter({
       component: () => import("../views/NewSessionView.vue"),
     },
     {
+      path: "/workspaces/:workspaceId",
+      name: "workspace",
+      component: () => import("../views/WorkspaceView.vue"),
+      props: true,
+    },
+    {
       path: "/worktrees/:worktreeId",
       name: "worktree",
       component: () => import("../views/WorktreeView.vue"),
@@ -49,8 +55,7 @@ export const router = createRouter({
     {
       path: "/settings",
       name: "settings",
-      component: () => import("../views/PlaceholderView.vue"),
-      meta: { titleKey: "nav.settings" },
+      component: () => import("../views/SettingsView.vue"),
     },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],

@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
-import type { DisplayInfo, NativeInfo, NativePeer, NativeTerminal, PeerConfig, TerminalConfig } from "./bindings.d.ts"
+import type { DisplayInfo, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, TerminalConfig } from "./bindings.d.ts"
 
 export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec } from "./bindings.d.ts"
+export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 
 type Bindings = typeof import("./bindings.d.ts")
 let bindings: Bindings | undefined
@@ -53,6 +54,10 @@ export function createPeer(config: PeerConfig = {}): Promise<NativePeer> {
 
 export function createTerminal(config: TerminalConfig): Promise<NativeTerminal> {
   return (bindings ??= loadBindings()).createTerminal(config)
+}
+
+export function openCatalog(databasePath: string, machineName: string): Promise<NativeCatalog> {
+  return (bindings ??= loadBindings()).openCatalog(databasePath, machineName)
 }
 
 export function supportedVideoCodecs(): Promise<string[]> {

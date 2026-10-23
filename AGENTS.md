@@ -8,9 +8,12 @@ product website and user manual.
 - deskfleet manages a team's AI agents and working environments across machines.
   Read [the architecture](agents/docs/architecture.md) before changing component
   boundaries or resource ownership.
-- The hierarchy is Team → Machine → Workspace → Worktree. A Worktree groups
-  directories and AgentSessions. A TerminalSession can belong to a Machine,
-  Workspace, or Worktree. Its working directory is a separate choice.
+- The hierarchy is Team → Machine → Workspace → Worktree. Workspace creation
+  requires ordered directory paths, with the first as default and no directory
+  aliases. Its main Worktree uses those actual directories; other Worktrees are
+  created and destroyed with their owning Session, never maintained separately.
+  A TerminalSession can belong to a Machine, Workspace, or Worktree. Its working
+  directory is a separate choice.
 - Cross-machine coordination belongs to agent-facing MCP tools. Do not introduce
   a global Project abstraction spanning machines.
 - The central backend is open-source Rust using Actix Web. Native capabilities

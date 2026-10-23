@@ -1,10 +1,5 @@
 // Client view models for the resource catalog.
 
-export interface TeamSummary {
-  id: string
-  name: string
-}
-
 export interface AgentSessionSummary {
   id: string
   title: string
@@ -37,17 +32,17 @@ export interface GitCheckoutSummary {
   changes: GitChange[]
 }
 
-/** A named path on the worktree's machine. */
+/** An ordered path on the worktree's machine; the first path is the default. */
 export interface DirectoryBinding {
-  name: string
   path: string
-  /** Null when the directory is not inside a Git checkout. */
-  git: GitCheckoutSummary | null
+  /** Undefined until inspected; null when the directory is not inside a Git checkout. */
+  git?: GitCheckoutSummary | null
 }
 
 export interface WorktreeSummary {
   id: string
-  name: string
+  /** Absent for the workspace's main worktree. */
+  sessionId?: string
   directories: DirectoryBinding[]
   /** Most recent first. */
   sessions: AgentSessionSummary[]

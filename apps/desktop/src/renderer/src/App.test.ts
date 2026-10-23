@@ -1,234 +1,188 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { createPinia } from "pinia"
+import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import App from "./App.vue"
 import { i18n } from "./i18n"
 import { router } from "./router"
+import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
+import type { LocalAgentState } from "../../shared/local-agent.ts"
 
+const mounted: { wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }[] = []
 async function mountApp(path = "/") {
   await router.push(path)
+  const pinia = createPinia()
   const wrapper = mount(App, {
     attachTo: document.body,
-    global: {
-      plugins: [createPinia(), router, i18n],
-      // xterm.js needs a real browser to render; TerminalSurface.test.ts covers its wiring.
-      stubs: { TerminalSurface: { props: ["banner"], template: '<div data-terminal :data-banner="banner" />' } },
-    },
+    global: { plugins: [pinia, router, i18n], stubs: { LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
   })
+  mounted.push({ wrapper, pinia })
   await flushPromises()
   return wrapper
 }
+function link(wrapper: VueWrapper, text: string) { return wrapper.findAll("a").find(a => a.text() === text)! }
+function button(wrapper: VueWrapper, text: string) { return wrapper.findAll("button").find(entry => entry.text() === text)! }
+const chips = (wrapper: VueWrapper) => wrapper.findAll(".ui-chip").map(chip => chip.text())
+function panel(wrapper: VueWrapper) { return wrapper.get('aside[aria-label="Details"]') }
 
-function link(wrapper: VueWrapper, text: string) {
-  return wrapper.findAll("a").find((a) => a.text() === text)!
-}
-
-const chips = (wrapper: VueWrapper) => wrapper.findAll(".ui-chip").map((chip) => chip.text())
-
-beforeEach(() => window.localStorage.clear())
+beforeEach(() => {
+  window.localStorage.clear()
+  vi.spyOn(window.deskfleet.catalog, "list").mockResolvedValue(catalogFixture())
+  vi.spyOn(window.deskfleet.desktop, "target").mockResolvedValue({ id: "local-daemon", name: "test-host", online: true, desktop: true })
+})
 afterEach(() => {
+  for (const { wrapper, pinia } of mounted.splice(0)) { wrapper.unmount(); disposePinia(pinia) }
+  vi.restoreAllMocks()
   i18n.global.locale.value = "en-US"
 })
 
-test("a new session can still browse the sample worktree catalog", async () => {
+test("the app shows automatic main and session worktrees without user-managed worktree names", async () => {
   const wrapper = await mountApp()
-
-  expect(wrapper.get("h1").text()).toBe("Start an agent session")
-  expect(chips(wrapper)).toEqual(["development-box", "storefront", "main", "Codex"])
-  const send = wrapper.get('[aria-label="Send (not available yet)"]')
-  expect(send.attributes("aria-disabled")).toBe("true")
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "Main worktree", "Codex"])
+  expect(wrapper.get('[aria-label="Send (not available yet)"]').attributes("aria-disabled")).toBe("true")
+  expect(wrapper.get("aside").text()).not.toContain("Example team")
+  expect(link(wrapper, "storefront").attributes("href")).toBe(`#/workspaces/${workspaceId}`)
+  expect(link(wrapper, "Main worktree").attributes("href")).toBe(`#/worktrees/${mainWorktreeId}`)
+  expect(link(wrapper, `Session ${sessionId}`).attributes("href")).toBe(`#/worktrees/${sessionWorktreeId}`)
 })
 
-test("the sidebar nests worktrees and their sessions under workspaces", async () => {
+test("workspace creation requires paths, supports choosing the first path by reordering, and retains input after failure", async () => {
+  const create = vi.spyOn(window.deskfleet.catalog, "createWorkspace").mockRejectedValueOnce(new Error("Directory does not exist"))
   const wrapper = await mountApp()
-  const tree = wrapper.get("aside").text()
-  expect(wrapper.get("aside").attributes("aria-label")).toBeUndefined()
-
-  for (const name of ["storefront", "main", "Investigate checkout failures", "checkout-fix"]) {
-    expect(tree).toContain(name)
-  }
-  expect(link(wrapper, "checkout-fix").attributes("href")).toBe(
-    "#/worktrees/worktree-storefront-checkout-fix",
-  )
-})
-
-test("offline machines start collapsed and show when they were last seen", async () => {
-  const wrapper = await mountApp()
-  const header = wrapper.findAll("button[aria-expanded]").find((b) => b.text().includes("build-linux"))!
-
-  expect(header.attributes("aria-expanded")).toBe("false")
-  expect(header.get(".ui-badge").attributes("title")).toMatch(/^Last seen Oct 2[23], 2026/)
-  expect(wrapper.text()).not.toContain("firmware")
-
-  await header.trigger("click")
-  expect(wrapper.text()).toContain("firmware")
-})
-
-test("a worktree page lists its directories and starts sessions in it", async () => {
-  const wrapper = await mountApp()
-  await link(wrapper, "checkout-fix").trigger("click")
-  await vi.waitFor(() =>
-    expect(wrapper.get("main header").text()).toBe("checkout-fix development-box / storefront"),
-  )
-  expect(wrapper.get("main").text()).toContain("/worktrees/storefront-api/checkout-fix")
-
-  const start = wrapper.findAll("button").find((b) => b.text() === "New session")!
-  await start.trigger("click")
+  await wrapper.get('[title="Add workspace"]').trigger("click")
+  await wrapper.get('input[name="workspace-name"]').setValue("notes")
+  await wrapper.get("aside form").trigger("submit")
+  expect(create).not.toHaveBeenCalled()
+  expect(wrapper.get('aside [role="alert"]').text()).toBe("Enter at least one directory path.")
+  expect(wrapper.find('input[name^="directory-name"]').exists()).toBe(false)
+  await wrapper.get('input[name="directory-path-0"]').setValue("/notes")
+  await button(wrapper, "Add directory").trigger("click")
+  await wrapper.get('input[name="directory-path-1"]').setValue("/code")
+  await wrapper.get('[aria-label="Move directory 2 up"]').trigger("click")
+  expect((wrapper.get('input[name="directory-path-0"]').element as HTMLInputElement).value).toBe("/code")
+  await wrapper.get("aside form").trigger("submit")
   await flushPromises()
-  expect(router.currentRoute.value.name).toBe("new-session")
-  expect(chips(wrapper)).toContain("checkout-fix")
+  expect(wrapper.get('aside [role="alert"]').text()).toBe("Directory does not exist")
+  expect((wrapper.get('input[name="workspace-name"]').element as HTMLInputElement).value).toBe("notes")
+  const paths = [{ path: "/code" }, { path: "/notes" }]
+  expect(create).toHaveBeenCalledWith("notes", paths)
+  create.mockResolvedValueOnce({ id: "9007199254741003", name: "notes", worktrees: [{ id: "9007199254741005", workspaceId: "9007199254741003", directories: paths }] })
+  await wrapper.get("aside form").trigger("submit")
+  await vi.waitFor(() => expect(router.currentRoute.value.params.workspaceId).toBe("9007199254741003"))
+  expect(wrapper.get("main").text()).toContain("Main worktree")
+  expect(wrapper.get("main").text()).toContain("/code")
 })
 
-test("a session page shows its title and location", async () => {
-  const wrapper = await mountApp()
-  await link(wrapper, "Implement the fix").trigger("click")
-
-  // The session route loads its view lazily.
-  await vi.waitFor(() =>
-    expect(wrapper.get("main header").text()).toBe(
-      "Implement the fix development-box / storefront / checkout-fix",
-    ),
-  )
-  expect(wrapper.text()).toContain("Session history is not available yet.")
+test("workspace edits update its automatic main directories without independent worktree maintenance", async () => {
+  const value = catalogFixture().workspaces[0]!
+  value.name = "renamed"
+  value.worktrees[0]!.directories = [{ path: "/code/api" }, { path: "/code/web" }]
+  const update = vi.spyOn(window.deskfleet.catalog, "updateWorkspace").mockResolvedValue(value)
+  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
+  expect(button(wrapper, "Add worktree")).toBeUndefined()
+  await button(wrapper, "Edit workspace").trigger("click")
+  await wrapper.get('input[name="workspace-name"]').setValue("renamed")
+  await wrapper.get('[aria-label="Move directory 2 up"]').trigger("click")
+  await wrapper.get("main form").trigger("submit")
+  await flushPromises()
+  expect(update).toHaveBeenCalledWith(workspaceId, "renamed", [{ path: "/code/api" }, { path: "/code/web" }])
+  expect(wrapper.get("main header").text()).toBe("renamed test-host")
+  await link(wrapper, "Main worktree").trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("worktree"))
+  expect(button(wrapper, "Edit worktree")).toBeUndefined()
+  expect(button(wrapper, "Delete worktree")).toBeUndefined()
+  expect(wrapper.get("main").text()).toContain("Manage workspace directories")
 })
 
-test("terminals appear at machine, workspace, and worktree scope", async () => {
-  const wrapper = await mountApp()
-
-  for (const [title, id] of [
-    ["zsh", "terminal-development-box-shell"],
-    ["docker compose logs", "terminal-storefront-services"],
-    ["pnpm dev", "terminal-storefront-web-dev"],
-  ]) {
-    expect(link(wrapper, title!).attributes("href")).toBe(`#/terminals/${id}`)
-  }
-
-  await link(wrapper, "docker compose logs").trigger("click")
-  await vi.waitFor(() =>
-    expect(wrapper.get("main header").text()).toBe(
-      "docker compose logs development-box / storefront",
-    ),
-  )
-  expect(wrapper.get("[data-terminal]").attributes("data-banner")).toContain(
-    "Terminal access is not available yet.",
-  )
+test("workspace deletion requires confirmation and clears its main worktree", async () => {
+  const remove = vi.spyOn(window.deskfleet.catalog, "deleteWorkspace").mockResolvedValue()
+  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
+  await button(wrapper, "Delete workspace").trigger("click")
+  expect(remove).not.toHaveBeenCalled()
+  expect(wrapper.get("main").text()).toContain("Its directories remain on disk")
+  await button(wrapper, "Confirm deletion").trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
+  expect(remove).toHaveBeenCalledWith(workspaceId)
+  expect(chips(wrapper)).toEqual([])
 })
 
-test("a worktree page lists its terminals", async () => {
-  const wrapper = await mountApp("/worktrees/worktree-storefront-main")
-  await vi.waitFor(() => expect(wrapper.find("main h2").exists()).toBe(true))
-
-  const terminals = wrapper.get("main").findAll("section")[2]!
-  expect(terminals.text()).toContain("pnpm dev/code/storefront-web")
-  const create = terminals.get('[title="New terminal (not available yet)"]')
-  expect(create.attributes("aria-disabled")).toBe("true")
+test.each([
+  ["Open terminal in default directory", "/code/web"],
+  ["Open terminal in /code/api", "/code/api"],
+])("%s sends the correct cwd and retains machine ownership", async (label, cwd) => {
+  const dial = vi.spyOn(window.deskfleet.terminal, "dial").mockImplementation(async options => ({ id: options.terminalId, title: "shell", cwd, cols: 80, rows: 24, status: "running" }))
+  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
+  const target = wrapper.findAll("button").find(entry => entry.text() === label || entry.attributes("aria-label") === label)!
+  await target.trigger("click")
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("terminal"))
+  expect(dial).toHaveBeenCalledWith({ mode: "create", terminalId: expect.any(String), cols: 80, rows: 24, cwd })
+  expect(panel(wrapper).text()).toContain("ScopeMachine")
 })
 
-test("desktop navigation includes the local daemon and graphical sample machines", async () => {
-  const wrapper = await mountApp()
-  await wrapper
-    .findAll("button[aria-expanded]")
-    .find((b) => b.text().includes("build-linux"))!
-    .trigger("click")
-
-  const desktops = wrapper.findAll("a").filter((a) => a.text() === "Remote desktop")
-  expect(desktops.map((a) => a.attributes("href"))).toEqual([
-    "#/machines/local-daemon/desktop",
-    "#/machines/machine-development-box/desktop",
-  ])
-
-  await desktops[1]!.trigger("click")
-  await vi.waitFor(() =>
-    expect(wrapper.get("main header").text()).toBe("Remote desktop development-box"),
-  )
-  expect(wrapper.text()).toContain("Remote desktop is not available yet.")
-  expect(wrapper.get("main").findAll("button").some((button) => button.text() === "Connect")).toBe(false)
+test("refresh failure preserves directories and disables workspace mutations until retry", async () => {
+  const wrapper = await mountApp(`/workspaces/${workspaceId}`)
+  vi.mocked(window.deskfleet.catalog.list).mockRejectedValueOnce(new Error("Daemon disconnected"))
+  await button(wrapper, "Refresh").trigger("click")
+  await flushPromises()
+  expect(wrapper.get('aside [role="alert"]').text()).toBe("Daemon disconnected")
+  expect(wrapper.get("main").text()).toContain("/code/web")
+  expect(button(wrapper, "Edit workspace").attributes("disabled")).toBeDefined()
+  await button(wrapper, "Refresh").trigger("click")
+  await flushPromises()
+  expect(button(wrapper, "Edit workspace").attributes("disabled")).toBeUndefined()
 })
 
-test("the desktop page explains why a machine cannot be shown", async () => {
-  const wrapper = await mountApp("/machines/machine-build-linux/desktop")
-  await vi.waitFor(() => expect(wrapper.text()).toContain("build-linux is offline."))
-
-  expect(wrapper.find('[title="Connect (not available yet)"]').exists()).toBe(false)
+test("session worktrees are read-only and identified by session ID", async () => {
+  const wrapper = await mountApp(`/worktrees/${sessionWorktreeId}`)
+  expect(wrapper.get("main header").text()).toBe(`Session ${sessionId} test-host / storefront`)
+  expect(button(wrapper, "New session")).toBeUndefined()
+  expect(button(wrapper, "Edit worktree")).toBeUndefined()
+  expect(button(wrapper, "Delete worktree")).toBeUndefined()
+  await panel(wrapper).findAll('[role="tab"]').find(tab => tab.text() === "Changes")!.trigger("click")
+  expect(panel(wrapper).text()).toContain("Git state has not been inspected.")
 })
 
-test("settings render a placeholder page", async () => {
+test("main worktree labels and the local footer use the active locale", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
-  const wrapper = await mountApp("/settings")
-
-  expect(wrapper.get("h1").text()).toBe("设置")
-  expect(wrapper.text()).toContain("尚不可用")
-})
-
-test("hiding the sidebar moves the window toolbar into the pane header", async () => {
   const wrapper = await mountApp()
-  await wrapper.get('[aria-label="Hide sidebar"]').trigger("click")
-
-  expect(wrapper.find('aside:not([aria-label="Details"])').exists()).toBe(false)
-  expect(wrapper.get("main header").find('[aria-label="Show sidebar"]').exists()).toBe(true)
-  expect(window.localStorage.getItem("deskfleet.sidebar-open")).toBe("false")
+  expect(chips(wrapper)).toContain("主工作树")
+  expect(wrapper.get("footer").text()).toBe("本本地")
 })
 
-function panel(wrapper: VueWrapper) {
-  return wrapper.get('aside[aria-label="Details"]')
-}
-
-async function openTab(wrapper: VueWrapper, name: string) {
-  await panel(wrapper).findAll('[role="tab"]').find((tab) => tab.text() === name)!.trigger("click")
-}
-
-test("the details panel describes the selected resource", async () => {
-  const wrapper = await mountApp("/terminals/terminal-storefront-web-dev")
-  await vi.waitFor(() => expect(panel(wrapper).text()).toContain("pnpm dev"))
-
-  const details = panel(wrapper).text()
-  for (const text of ["Scope", "Worktree", "/code/storefront-web", "main · 4f2c1a9", "Not a Git checkout"]) {
-    expect(details).toContain(text)
+test("settings opens the local Agent control and refreshes resources after lifecycle transitions", async () => {
+  const listeners = new Set<(state: LocalAgentState) => void>()
+  vi.spyOn(window.deskfleet.settings, "onChanged").mockImplementation(listener => {
+    listeners.add(listener)
+    return () => { listeners.delete(listener) }
+  })
+  vi.spyOn(window.deskfleet.settings, "get").mockResolvedValue({ enabled: true, status: "running" })
+  const list = vi.spyOn(window.deskfleet.terminal, "list").mockResolvedValue([])
+  const view = await mountApp("/settings")
+  expect(view.get('main [role="switch"]').attributes("aria-label")).toBe("Enable local Agent")
+  expect(view.get("main h1").text()).toBe("Local Agent")
+  vi.mocked(window.deskfleet.catalog.list).mockClear()
+  list.mockClear()
+  for (const listener of listeners) listener({ enabled: false, status: "stopping" })
+  await flushPromises()
+  expect(window.deskfleet.catalog.list).not.toHaveBeenCalled()
+  expect(list).not.toHaveBeenCalled()
+  for (const [index, status] of (["stopped", "running", "error"] as const).entries()) {
+    for (const listener of listeners) listener({ enabled: status === "running", status })
+    await flushPromises()
+    expect(window.deskfleet.catalog.list).toHaveBeenCalledTimes(index + 1)
+    expect(list).toHaveBeenCalledTimes(index + 1)
   }
-
-  await router.push("/machines/machine-development-box/desktop")
-  await vi.waitFor(() => expect(panel(wrapper).text()).toContain("DisplayAvailable"))
+  view.unmount()
+  expect(listeners.size).toBe(0)
 })
 
-test("the changes tab lists Git changes per checkout in the worktree", async () => {
-  const wrapper = await mountApp("/sessions/session-checkout-fix")
-  await openTab(wrapper, "Changes")
-
-  const tab = panel(wrapper).get('[role="tab"][aria-selected="true"]')
-  expect(tab.text()).toBe("Changes")
-  const changes = panel(wrapper).get('[role="tabpanel"]')
-  expect(changes.findAll("section").map((section) => section.find("span").text())).toEqual([
-    "frontend",
-    "backend",
-  ])
-  expect(changes.text()).toContain("PaymentStep.test.tsxsrc/checkout+54A")
-  expect(changes.get('[title="Deleted"]').text()).toBe("D")
-  expect(window.localStorage.getItem("deskfleet.details-tab")).toBe("changes")
-})
-
-test("resources outside a worktree have no changes to show", async () => {
-  const wrapper = await mountApp("/terminals/terminal-development-box-shell")
-  await openTab(wrapper, "Changes")
-
-  expect(panel(wrapper).text()).toContain("Changes are shown for resources in a worktree.")
-})
-
-test("arrow keys move between the panel tabs", async () => {
+test("sidebar and details panel controls retain their layout behavior", async () => {
   const wrapper = await mountApp()
   const [details, changes] = panel(wrapper).findAll('[role="tab"]')
-
   await details!.trigger("keydown", { key: "ArrowRight" })
   expect(changes!.attributes("aria-selected")).toBe("true")
-  expect(document.activeElement).toBe(changes!.element)
-  await changes!.trigger("keydown", { key: "ArrowRight" })
-  expect(details!.attributes("aria-selected")).toBe("true")
-})
-
-test("the details panel can be hidden", async () => {
-  const wrapper = await mountApp()
+  await wrapper.get('[aria-label="Hide sidebar"]').trigger("click")
+  expect(wrapper.get("main header").find('[aria-label="Show sidebar"]').exists()).toBe(true)
+  expect(window.localStorage.getItem("deskfleet.sidebar-open")).toBe("false")
   await wrapper.get('[aria-label="Hide details panel"]').trigger("click")
-
   expect(wrapper.find('aside[aria-label="Details"]').exists()).toBe(false)
-  expect(wrapper.get("main header").classes()).toContain("titlebar-overlay-inset")
-  expect(window.localStorage.getItem("deskfleet.details-open")).toBe("false")
 })

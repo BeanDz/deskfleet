@@ -9,7 +9,8 @@ import SidebarFooter from "./SidebarFooter.vue"
 import SidebarLink from "./SidebarLink.vue"
 
 const { t } = useI18n()
-const { machines } = storeToRefs(useFleetStore())
+const fleet = useFleetStore()
+const { machines, catalogError, catalogLoading } = storeToRefs(fleet)
 const platform = window.deskfleet.platform
 </script>
 
@@ -28,6 +29,11 @@ const platform = window.deskfleet.platform
     </nav>
 
     <div class="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <div class="mb-2 flex items-center justify-between gap-2 px-2.5 text-xs text-ui-text-faint">
+        <span>{{ catalogLoading ? t("catalog.loading") : t("catalog.workspaces") }}</span>
+        <button type="button" class="cursor-pointer rounded px-1 py-1 hover:bg-ui-hover disabled:op-40" :disabled="catalogLoading" @click="fleet.refreshLocal()">{{ t("catalog.refresh") }}</button>
+      </div>
+      <p v-if="catalogError" role="alert" class="mx-2.5 mb-3 break-words text-xs text-ui-danger">{{ catalogError }}</p>
       <MachineSection v-for="machine in machines" :key="machine.id" :machine="machine" />
     </div>
 

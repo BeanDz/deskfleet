@@ -28,12 +28,50 @@ function fixture() {
   })
   const emit = vi.fn()
   const emitTerminal = vi.fn()
-  const controller = new DesktopMediaController(emit, emitTerminal)
+  const emitCatalog = vi.fn()
+  const controller = new DesktopMediaController(emit, emitTerminal, emitCatalog)
   controllers.push(controller)
-  return { controller, client, emit, emitTerminal, event: (value: DaemonEvent) => event(value), disconnect: () => disconnect(new Error("daemon stopped")) }
+  return { controller, client, emit, emitTerminal, emitCatalog, event: (value: DaemonEvent) => event(value), disconnect: () => disconnect(new Error("daemon stopped")) }
 }
 
 const offer = { sessionId: "first", codec: "h264", audio: false, sdp: "offer" }
+
+test("catalog operations share authenticated signaling without creating a peer", async () => {
+  const { controller, client } = fixture()
+  const directories = [{ path: "/code/frontend" }]
+  const operations = [
+    ["catalogList", {}],
+    ["workspaceCreate", { name: "storefront", directories }],
+    ["workspaceUpdate", { workspaceId: "1", name: "shop", directories }],
+    ["workspaceDelete", { workspaceId: "1" }],
+  ] as const
+
+  for (const [method, params] of operations) {
+    await controller.invoke(method, params)
+    expect(client.call).toHaveBeenLastCalledWith(method, params)
+  }
+  expect(mock.connect).toHaveBeenCalledTimes(1)
+  await expect(controller.invoke("workspaceUpdate", { workspaceId: "../other", name: "shop", directories })).rejects.toThrow("Invalid catalog resource ID")
+  await expect(controller.invoke("workspaceCreate", { name: "main", directories: [] })).rejects.toThrow("A workspace needs at least one directory")
+  await expect(controller.invoke("worktreeDelete", { worktreeId: "2" })).rejects.toThrow("Unknown desktop operation")
+  expect(client.call).toHaveBeenCalledTimes(operations.length)
+})
+
+test("catalog changes have their own event stream and stop after owner disposal", async () => {
+  const { controller, event, emit, emitTerminal, emitCatalog } = fixture()
+  await controller.invoke("catalogList", {})
+  event({ kind: "catalogChanged" })
+  expect(emitCatalog).toHaveBeenCalledTimes(1)
+  expect(emit).not.toHaveBeenCalled()
+  expect(emitTerminal).not.toHaveBeenCalled()
+
+  event({ kind: "terminalHungup", terminalId: "shell-1" })
+  expect(emitCatalog).toHaveBeenCalledTimes(1)
+  expect(emitTerminal).toHaveBeenCalledTimes(1)
+  controller.dispose()
+  event({ kind: "catalogChanged" })
+  expect(emitCatalog).toHaveBeenCalledTimes(1)
+})
 
 test("dial and hangup use authenticated signaling even without a data peer", async () => {
   const { controller, client, event, emitTerminal, emit } = fixture()

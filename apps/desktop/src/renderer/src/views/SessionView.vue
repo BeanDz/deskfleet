@@ -5,9 +5,11 @@ import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import { useFleetStore } from "../stores/fleet.ts"
+import { useWorktreeLabel } from "../composables/useWorktreeLabel.ts"
 
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
+const worktreeLabel = useWorktreeLabel()
 const fleet = useFleetStore()
 const location = computed(() => fleet.findSession(props.sessionId))
 </script>
@@ -17,7 +19,7 @@ const location = computed(() => fleet.findSession(props.sessionId))
     <template v-if="location">
       {{ location.session.title }}
       <ResourcePath
-        :segments="[location.machine.name, location.workspace.name, location.worktree.name]"
+        :segments="[location.machine.name, location.workspace.name, worktreeLabel(location.worktree)]"
       />
     </template>
   </PaneHeader>
