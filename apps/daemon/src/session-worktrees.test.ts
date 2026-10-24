@@ -181,6 +181,7 @@ test("workspace CLI passes ordered directories to ACP and destroys them only aft
       }, client)
       return {
         ...connection,
+        async setConfigOption() { return { configOptions: [] } },
         async newSession(params) {
           assert.equal(params.cwd, created!.worktree.directories[0]!.path)
           assert.deepEqual(params.additionalDirectories, [created!.worktree.directories[1]!.path])
@@ -254,6 +255,7 @@ test("interruptions during checkout or provider initialization still clean up th
             await continueStartup
             return {
               initialization: { protocolVersion: 1 },
+              setConfigOption: async () => ({ configOptions: [] }),
               newSession: async () => assert.fail("An interrupted initialization must not create an ACP session"),
               resume: async () => assert.fail("An interrupted initialization must not resume an ACP session"),
               steer: async () => assert.fail("An interrupted initialization must not steer"),

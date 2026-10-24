@@ -1,6 +1,8 @@
 import type { ContentBlock, RequestPermissionRequest, SessionNotification } from "@agentclientprotocol/sdk"
 import type { GitDiffRequest, GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
+import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+
 export const AGENT_CHANNEL = "deskfleet-acp"
 export const AGENT_CHUNK_BYTES = 16 * 1024
 export const AGENT_MESSAGE_BYTES = 32 * 1024 * 1024
@@ -141,8 +143,11 @@ export interface AgentCommit {
 export interface AgentReceipt { operationId: string; commandId: string; inputId?: string; sessionId: string }
 export interface AgentMutation { sessionId: string; operationId: string }
 export interface AgentMethods {
+  "_deskfleet/agent/configuration": { params: AgentConfigurationParams; result: AgentConfiguration }
+  "_deskfleet/session/configuration": { params: { sessionId: string }; result: AgentConfiguration }
+  "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
-  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider: string; context: AgentSessionContext }; result: AgentSnapshot }
+  "_deskfleet/session/create": { params: { workspaceId: string; operationId: string; title?: string; provider: string; context: AgentSessionContext } & AgentConfigurationSelection; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
   "_deskfleet/git/status": { params: { sessionId: string }; result: GitStatusSnapshot }

@@ -1,3 +1,6 @@
+import { homedir } from "node:os"
+import { readAgentConfiguration } from "./agent-configuration.ts"
+import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { ContentBlock } from "@agentclientprotocol/sdk"
 import { codexProvider } from "./agents/codex.ts"
 import type { AgentProvider } from "./agents/acp.ts"
@@ -47,6 +50,8 @@ export class AgentSessions {
   readonly #git = new GitInspection()
   readonly #runtimes = new Map<string, AgentRuntime>()
   readonly #operations = new Map<string, Promise<unknown>>()
+  readonly #discovery = new Set<Promise<unknown>>()
+  readonly #closing = new AbortController()
   #closed = false
 
   constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders) {
@@ -100,6 +105,26 @@ export class AgentSessions {
   async handle(method: AgentMethod, value: unknown, actor: AgentActor): Promise<unknown> {
     if (this.#closed) throw new Error("Agent service is stopping")
     const params = object(value)
+    if (method === "_deskfleet/agent/configuration") {
+      validateAgentConfigurationParams(params)
+      let cwd = homedir()
+      if (params.workspaceId !== undefined) {
+        const workspace = (await this.#catalog.native.snapshot()).workspaces.find(workspace => workspace.id === params.workspaceId)
+        const directory = workspace?.worktrees.find(worktree => !worktree.sessionId)?.directories[0]
+        if (!directory) throw new Error("Unknown local workspace")
+        cwd = directory.path
+      }
+      const pending = readAgentConfiguration(params as unknown as AgentConfigurationParams, cwd, { ...this.#resolveProvider(params.provider as string), signal: this.#closing.signal })
+      this.#discovery.add(pending)
+      try { return await pending } finally { this.#discovery.delete(pending) }
+    }
+    if (method === "_deskfleet/session/configuration") {
+      const sessionId = id(params.sessionId, "Session ID")
+      await this.journal.read(sessionId)
+      const pending = this.#runtime(sessionId).configuration(this.#closing.signal)
+      this.#discovery.add(pending)
+      try { return await pending } finally { this.#discovery.delete(pending) }
+    }
     if (method === "_deskfleet/session/list") return this.journal.list()
     if (method === "_deskfleet/session/subscribe") return this.journal.read(id(params.sessionId, "Session ID"))
     if (method === "_deskfleet/session/history") {
@@ -174,6 +199,12 @@ export class AgentSessions {
       const session = (await this.journal.read(sessionId)).session
       if (this.#closed) throw new Error("Agent service is stopping")
       if (session.lifecycle === "deleting" && method !== "_deskfleet/session/delete") throw new Error("Session deletion is in progress")
+      if (method === "_deskfleet/session/configure") {
+        validateAgentConfigurationSelection(params)
+        const result = await this.#runtime(sessionId).configure(params as AgentConfigurationSelection)
+        await this.#complete(command, result)
+        return result
+      }
       if (method === "_deskfleet/input/submit") return await this.#submit(command)
       if (method === "_deskfleet/input/steer" || method === "_deskfleet/input/withdraw" || method === "_deskfleet/input/retry") return await this.#inputAction(command)
       if (method === "_deskfleet/permission/respond") return await this.#decide(command)
@@ -209,6 +240,7 @@ export class AgentSessions {
   async #create(command: AgentCommand): Promise<AgentSnapshot> {
     const provider = string(command.params.provider, "Agent provider")
     this.#resolveProvider(provider)
+    validateAgentConfigurationSelection(command.params)
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
@@ -219,7 +251,7 @@ export class AgentSessions {
       await this.journal.serial(session.id, async () => {
         const snapshot = await this.journal.read(session.id)
         const ready = { ...snapshot.session, lifecycle: "ready" as const, updatedAt: timestamp() }
-        await this.journal.commit(snapshot, { session: ready, events: [this.journal.event(session.id, "session", ready)] })
+        await this.journal.commit(snapshot, { session: ready, events: [this.journal.event(session.id, "session", ready), this.journal.event(session.id, "command", command)] })
       })
       // Provider failures are persisted by the runtime and can be resumed.
       if (!this.#closed) await this.#runtime(session.id).start().catch(() => {})
@@ -374,7 +406,9 @@ export class AgentSessions {
 
   async close(): Promise<void> {
     this.#closed = true
+    this.#closing.abort(new Error("Agent service is stopping"))
     const stopping = Promise.allSettled([...this.#runtimes.values()].map(runtime => runtime.stop()))
+    await Promise.allSettled(this.#discovery)
     await Promise.allSettled(this.#operations.values())
     // A Resume accepted before shutdown may have been waiting for an earlier
     // Stop. Once accepted commands settle, close any generation they restarted.

@@ -1,8 +1,14 @@
+import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { onScopeDispose, ref } from "vue"
 import type { AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../../daemon/src/agent-protocol.ts"
+import { agentConfiguration as normalizeAgentConfiguration } from "../../../../../daemon/src/agent-configuration-protocol.ts"
+import type { AgentConfiguration } from "../../../shared/agent-configuration.ts"
 import type { GitDiffRequest } from "../../../../../daemon/src/git-protocol.ts"
+import { useProvidersStore } from "./providers.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
+
+export interface AgentSelection { provider: string; model?: string; reasoningEffort?: string }
 
 export interface AgentSessionView {
   snapshot: AgentSnapshot | null
@@ -31,9 +37,14 @@ function replace<T>(values: T[], value: T, key: (value: T) => string | number): 
 
 /** Shared projections outlive the visible route; the daemon owns execution and history. */
 export const useAgentSessionsStore = defineStore("agent-sessions", () => {
+  const providers = useProvidersStore()
   const sessions = ref<Record<string, AgentSessionRecord>>({})
   const views = ref<Record<string, AgentSessionView>>({})
   const drafts = ref<Record<string, string>>({})
+  const draftConfiguration = useLocalStorage<AgentSelection>("deskfleet.agent-configuration", { provider: "codex" })
+  const configurations = ref<Record<string, AgentConfiguration>>({})
+  const configurationReads = new Map<string, Promise<AgentConfiguration>>()
+  const configurationSequences = new Map<string, string>()
   const state = ref<AgentConnectionState>("idle")
   const error = ref<string | null>(null)
   const operations = ref<Record<string, PendingAgentOperation>>({})
@@ -115,6 +126,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       journal(event.sessionId).set(event.seq, event)
       if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = event.payload as AgentSessionRecord
       if (event.kind === "command") commandReceived(event.payload as AgentCommand)
+      if (event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "config_option_update"
+        && sequenceCompare(event.seq, configurationSequences.get(event.sessionId) ?? "0") > 0) {
+        const providerId = sessions.value[event.sessionId]?.provider ?? configurations.value[event.sessionId]?.provider.id
+        const provider = providers.providers.find(provider => provider.id === providerId)
+        configurations.value[event.sessionId] = normalizeAgentConfiguration(event.payload.update.configOptions, providerId ? {
+          id: providerId, name: provider?.name ?? configurations.value[event.sessionId]?.provider.name ?? providerId,
+        } : undefined)
+        configurationSequences.set(event.sessionId, event.seq)
+      }
       changed.add(event.sessionId)
     }
     for (const id of changed) {
@@ -227,7 +247,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (command) commandReceived(command)
     }
   }
-  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/git/status" | "_deskfleet/git/diff">>(
+  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/status" | "_deskfleet/git/diff">>(
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
@@ -266,9 +286,28 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
 
+  const agentConfiguration = (params: AgentSelection & { workspaceId?: string }) => call("_deskfleet/agent/configuration", params)
+  function sessionConfiguration(sessionId: string): Promise<AgentConfiguration> {
+    const current = configurationReads.get(sessionId)
+    if (current) return current
+    const sequence = configurationSequences.get(sessionId)
+    const reading = call("_deskfleet/session/configuration", { sessionId }).then(result => {
+      if (sequence === configurationSequences.get(sessionId)) configurations.value[sessionId] = result
+      return configurations.value[sessionId]!
+    }).finally(() => { configurationReads.delete(sessionId) })
+    configurationReads.set(sessionId, reading)
+    return reading
+  }
+  async function configureSession(sessionId: string, choices: Omit<AgentSelection, "provider">): Promise<AgentConfiguration> {
+    const sequence = configurationSequences.get(sessionId)
+    const result = await mutation("_deskfleet/session/configure", { sessionId, ...choices })
+    if (sequence === configurationSequences.get(sessionId)) configurations.value[sessionId] = result
+    return configurations.value[sessionId]!
+  }
   async function create(workspaceId: string, title: string, context: AgentSessionContext, provider: string): Promise<AgentSnapshot> {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
-    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider, context })
+    const choices = draftConfiguration.value.provider === provider ? draftConfiguration.value : undefined
+    const snapshot = pending ? await checkOperation(pending.operationId) as AgentSnapshot : await mutation("_deskfleet/session/create", { workspaceId, title, provider, context, model: choices?.model, reasoningEffort: choices?.reasoningEffort })
     snapshotReceived(snapshot)
     return snapshot
   }
@@ -290,10 +329,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     await mutation("_deskfleet/session/delete", { sessionId })
     delete sessions.value[sessionId]
     delete views.value[sessionId]
+    delete configurations.value[sessionId]
+    configurationSequences.delete(sessionId)
     journals.delete(sessionId)
   }
   const gitStatus = (sessionId: string) => call("_deskfleet/git/status", { sessionId })
   const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)
   onScopeDispose(() => { disposed = true; client.close() })
-  return { sessions, views, drafts, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, remove, gitStatus, gitDiff }
+  return { sessions, views, drafts, draftConfiguration, configurations, agentConfiguration, sessionConfiguration, configureSession, state, error, operations, refresh, open, checkOperation, create, submit, steer, withdraw, retry, cancel, respond, stop, remove, gitStatus, gitDiff }
 })

@@ -9,7 +9,8 @@ if (exitFile) process.once("exit", code => writeFileSync(exitFile, String(code))
 const activePrompts = new Map<string, (response: acp.PromptResponse) => void>()
 let nextSession = 0
 const connection = acp.agent({ name: "deskfleet-test-agent" })
-  .onRequest(acp.methods.agent.initialize, ({ params }) => {
+  .onRequest(acp.methods.agent.initialize, async ({ params }) => {
+    if (mode === "wait-init") await new Promise(() => {})
     if (mode === "exit-init") process.exit(12)
     return {
       protocolVersion: acp.PROTOCOL_VERSION + (mode === "wrong-version" ? 1 : 0),
@@ -29,9 +30,12 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
       },
     }
   })
-  .onRequest(acp.methods.agent.session.new, ({ params }) => ({
-    sessionId: `fixture-session-${++nextSession}`,
-    _meta: { request: params },
+  .onRequest(acp.methods.agent.session.new, async ({ params }) => {
+    if (mode === "wait-session") await new Promise(() => {})
+    return { sessionId: `fixture-session-${++nextSession}`, _meta: { request: params } }
+  })
+  .onRequest(acp.methods.agent.session.setConfigOption, ({ params }) => ({
+    configOptions: [{ id: params.configId, category: "model", name: "Model", type: "select", currentValue: String(params.value), options: [{ value: String(params.value), name: "Model" }] }],
   }))
   .onRequest(acp.methods.agent.session.resume, ({ params }) => ({ _meta: { request: params } }))
   .onRequest(acp.methods.agent.session.prompt, async ({ params, client }) => {

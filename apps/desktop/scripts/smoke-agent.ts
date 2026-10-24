@@ -8,10 +8,11 @@ import { setTimeout as delay } from "node:timers/promises"
 import { promisify } from "node:util"
 import { build } from "esbuild"
 import { startDaemon } from "../../daemon/src/daemon.ts"
-import type { AgentClient, AgentConnection, AgentProvider } from "../../daemon/src/agents/acp.ts"
+import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "../../daemon/src/agents/acp.ts"
 import type { AgentSmokeContext, AgentSmokeResult } from "./fixtures/agent-main.ts"
 
 type PromptResponse = Awaited<ReturnType<AgentConnection["prompt"]>>
+type ConfigOptions = NonNullable<Awaited<ReturnType<AgentConnection["newSession"]>>["configOptions"]>
 
 const execute = promisify(execFile)
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-agent-smoke-")))
@@ -29,33 +30,58 @@ let clientNumber = 0
 
 /** Deterministic provider behavior, with no external agent process or credentials. */
 class ScriptedProvider implements AgentProvider {
-  readonly id = "smoke"
+  readonly id = "codex"
   readonly prompts: string[] = []
   readonly steers: string[] = []
+  readonly promptConfigurations: { model: string; reasoningEffort: string; launch: AgentConfig }[] = []
+  readonly connectionConfigurations: AgentConfig[] = []
   readonly failures: unknown[] = []
   connections = 0
-  active?: (result: PromptResponse) => void
 
-  async connect(_config: unknown, client: AgentClient): Promise<AgentConnection> {
+  async connect(config: AgentConfig, client: AgentClient): Promise<AgentConnection> {
     this.connections++
+    this.connectionConfigurations.push(structuredClone(config))
+    let model = "balanced"
+    let reasoningEffort = "medium"
+    let active: ((result: PromptResponse) => void) | undefined
+    const configuration = (): ConfigOptions => [
+      { id: "model", name: "Model", category: "model", type: "select", currentValue: model, options: [{ value: "balanced", name: "Smoke Balanced" }, { value: "fast", name: "Smoke Fast" }] },
+      { id: "reasoning_effort", name: "Reasoning effort", category: "thought_level", type: "select", currentValue: reasoningEffort, options: [{ value: "medium", name: "Medium" }, { value: "high", name: "High" }] },
+    ]
     const update = (text: string) => client.onUpdate({ sessionId: "smoke-provider-session", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } })
-    const finish = () => { const done = this.active; this.active = undefined; done?.({ stopReason: "end_turn" }) }
+    const finish = () => { const done = active; active = undefined; done?.({ stopReason: "end_turn" }) }
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
-      newSession: async () => ({ sessionId: "smoke-provider-session" }),
-      resume: async () => ({}),
+      newSession: async () => ({ sessionId: "smoke-provider-session", configOptions: configuration() }),
+      resume: async () => ({ configOptions: configuration() }),
+      setConfigOption: async params => {
+        assert.ok(typeof params.value === "string")
+        if (params.configId === "model") {
+          assert.ok(["balanced", "fast"].includes(params.value))
+          model = params.value
+          reasoningEffort = "medium"
+        } else {
+          assert.equal(params.configId, "reasoning_effort")
+          assert.ok(["medium", "high"].includes(params.value))
+          reasoningEffort = params.value
+        }
+        const configOptions = configuration()
+        await client.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "config_option_update", configOptions } })
+        return { configOptions }
+      },
       prompt: async params => {
         const text = params.prompt.map(block => block.type === "text" ? block.text : "").join("")
         this.prompts.push(text)
+        this.promptConfigurations.push({ model, reasoningEffort, launch: structuredClone(config) })
         if (text === "Smoke first prompt") {
-          const done = new Promise<PromptResponse>(resolve => { this.active = resolve })
+          const done = new Promise<PromptResponse>(resolve => { active = resolve })
           await update("stream one 中文\n")
           await delay(75)
           await update("stream two\n")
           return done
         }
-        assert.equal(text, "Smoke queued candidate", "Only the untouched candidate should become the next prompt")
-        await update("queued reply\n")
+        assert.ok(["Smoke queued candidate", "Smoke changed model prompt"].includes(text), "Only the untouched candidate or explicit new prompt should run")
+        await update(text === "Smoke queued candidate" ? "queued reply\n" : "changed model reply\n")
         return { stopReason: "end_turn" }
       },
       steer: async params => {
@@ -123,17 +149,27 @@ try {
   daemon = await startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => null, agentProvider: provider })
   const first = await launchClient("create")
   assert.deepEqual(provider.failures, [])
-  assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate"])
+  assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
+  const launch = { name: "Smoke Codex", binaryPath: `${repository}/smoke-codex`, env: { DESKFLEET_SMOKE_PROFILE: "configured" } }
+  const configuredConnections = provider.connectionConfigurations.filter(config => config.name === launch.name)
+  assert.ok(configuredConnections.length >= 2, "Draft discovery and Session startup must both use the configured provider")
+  for (const config of configuredConnections) assert.deepEqual(config, launch, "Configured provider launch settings must reach discovery and startup")
+  assert.deepEqual(provider.promptConfigurations, [
+    { model: "fast", reasoningEffort: "high", launch },
+    { model: "fast", reasoningEffort: "high", launch },
+    { model: "balanced", reasoningEffort: "medium", launch },
+  ], "The first prompt must use draft selections and later prompts must use the Session's confirmed configuration")
   assert.deepEqual(provider.steers, ["Smoke selected steer"])
   assert.ok((await stat(join(controlDirectory, "catalog.db"))).size > 0)
+  const connections = provider.connections
   await daemon.close()
   daemon = undefined
   daemon = await startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => null, agentProvider: provider })
   const restored = await launchClient("restore", first)
   assert.deepEqual(restored, first)
-  assert.equal(provider.connections, 1, "Reconnecting must not restart the provider")
-  assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate"])
-  console.log("Production Electron Agent: New Session, streaming, shared backlog, selected steering, permission, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath })
+  assert.equal(provider.connections, connections, "Reconnecting must not restart the provider")
+  assert.deepEqual(provider.prompts, ["Smoke first prompt", "Smoke queued candidate", "Smoke changed model prompt"])
+  console.log("Production Electron Agent: configured provider selection and launch settings, dynamic draft and Session configuration, streaming, shared backlog, selected steering, permission, route reattachment, live Git status/diffs, and SQLite replay after daemon/client restart passed", { ...restored, screenshotPath })
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   if (provider.failures.length) console.error(provider.failures)

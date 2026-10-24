@@ -1,6 +1,7 @@
 import { mount, type VueWrapper } from "@vue/test-utils"
 import type { AgentEvent } from "../../../../../../daemon/src/agent-protocol.ts"
-import { afterEach, expect, test } from "vitest"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
+import { afterEach, beforeEach, expect, test } from "vitest"
 import { i18n } from "../../i18n/index.ts"
 import { agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../../test/agent.ts"
 import AgentConversation from "./AgentConversation.vue"
@@ -8,7 +9,9 @@ import AgentBacklog from "./AgentBacklog.vue"
 import AgentPermissions from "./AgentPermissions.vue"
 import SessionComposer from "../composer/SessionComposer.vue"
 const wrappers: VueWrapper[] = []
-afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
+let pinia: ReturnType<typeof createPinia>
+beforeEach(() => { pinia = createPinia(); setActivePinia(pinia) })
+afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount(); disposePinia(pinia) })
 const button = (view: VueWrapper, name: string) => view.findAll("button").find(button => button.text() === name || button.attributes("aria-label") === name)!
 test("message times render in every app locale", () => {
   const input = agentInput({ state: "delivered", deliveredAt: "2026-10-06T12:33:00Z" })
@@ -102,6 +105,6 @@ test("only a new Session offers its context, and an existing directory Session i
   expect(fresh.emitted("update:context")).toEqual([["directory"]])
   const worktree = { id: "31", directories: [{ path: "/code/web" }], terminals: [] }
   const existing = mount(SessionComposer, { props: { location: { machine, workspace, worktree, session: { id: "30", context: "directory" } } }, global: { plugins: [i18n], stubs: { RouterLink: { template: "<a><slot /></a>" } } } }); wrappers.push(existing)
-  expect(existing.find('[aria-haspopup="menu"]').exists()).toBe(false)
+  expect(existing.find('[aria-label^="Session context:"]').exists()).toBe(false)
   expect(existing.text()).toContain("Working directory")
 })

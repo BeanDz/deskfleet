@@ -18,11 +18,13 @@ export interface AgentSmokeContext {
   sessionId?: string
   workspaceId?: string
   worktreeId?: string
+  providerId?: string
 }
 export interface AgentSmokeResult {
   sessionId: string
   workspaceId: string
   worktreeId: string
+  providerId: string
   conversationEntries: number
   permissionId: string
 }
@@ -93,6 +95,39 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   const backlog = () => document.querySelector<HTMLElement>('[aria-label="Queued"]')
   const permissions = () => document.querySelector<HTMLElement>('[aria-label="Permissions"]')
   const prompt = () => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')
+  const configuration = () => document.querySelector<HTMLElement>("[data-agent-configuration-menu]")
+  const configurationTrigger = () => document.querySelector<HTMLButtonElement>("[data-agent-configuration-trigger]")
+  const configurationControl = (kind: "agent" | "model" | "reasoning") => configuration()?.querySelector<HTMLButtonElement>(`[data-agent-control="${kind}"]`)
+  const configurationChoice = (value: string) => document.querySelector<HTMLButtonElement>(`[data-agent-configuration-options] [role="menuitemradio"][data-value="${value}"]`)
+  async function expandConfiguration(): Promise<void> {
+    await until(() => !!configurationTrigger() && !configurationTrigger()!.disabled, "Agent configuration trigger")
+    if (!configuration()) configurationTrigger()!.click()
+    await until(() => {
+      const controls = configuration()?.querySelectorAll<HTMLButtonElement>("[data-agent-control]")
+      return controls?.length === 3 && !configurationControl("model")?.disabled && !configurationControl("reasoning")?.disabled
+    }, "Dynamic Agent, model, and reasoning menu")
+    require(configuration()!.querySelector('[data-agent-control="agent"]')?.textContent?.includes("Codex"), "Agent menu must display Codex")
+  }
+  async function openConfigurationOptions(kind: "agent" | "model" | "reasoning"): Promise<void> {
+    await expandConfiguration()
+    configurationControl(kind)!.click()
+    await until(() => !!document.querySelector('[data-agent-configuration-options] [role="menuitemradio"]'), `${kind} choices`)
+    if (kind === "model") require(configurationChoice("fast")?.textContent?.trim() === "Smoke Fast", "Model options must come from the provider")
+  }
+  async function selectedConfiguration(kind: "agent" | "model" | "reasoning"): Promise<string | null> {
+    await openConfigurationOptions(kind)
+    return document.querySelector('[data-agent-configuration-options] [role="menuitemradio"][aria-checked="true"]')?.getAttribute("data-value") ?? null
+  }
+  async function selectConfiguration(kind: "agent" | "model" | "reasoning", value: string): Promise<void> {
+    await openConfigurationOptions(kind)
+    await until(() => !!configurationChoice(value) && !configurationChoice(value)!.disabled, `${value} choice`)
+    configurationChoice(value)!.click()
+    await until(async () => await selectedConfiguration(kind) === value, `Confirmed agent configuration ${value}`)
+  }
+  async function collapseConfiguration(): Promise<void> {
+    if (configuration()) configurationTrigger()!.click()
+    await until(() => !configuration(), "Collapsed Agent configuration")
+  }
   async function send(text: string, label: string): Promise<void> {
     await until(() => !!prompt(), "Prompt composer")
     prompt()!.value = text
@@ -112,7 +147,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     for (const toggle of folded()) toggle.click()
     await until(() => !folded().length, "Expanded turn work")
     const text = conversation()?.innerText ?? ""
-    for (const marker of ["Smoke first prompt", "stream one 中文", "stream two", "Smoke selected steer", "steer received", "permission accepted", "Smoke queued candidate", "queued reply"]) {
+    for (const marker of ["Smoke first prompt", "stream one 中文", "stream two", "Smoke selected steer", "steer received", "permission accepted", "Smoke queued candidate", "queued reply", "Smoke changed model prompt", "changed model reply"]) {
       require(text.split(marker).length === 2, `Expected exactly one ${marker} in persisted conversation: ${text}`)
     }
     require(!backlog(), "All submitted inputs should have left the backlog")
@@ -124,12 +159,22 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   let sessionId = context.sessionId
   let workspaceId = context.workspaceId
   let worktreeId = context.worktreeId
+  let providerId = context.providerId
   if (context.phase === "create") {
     require((await api.catalog.list()).workspaces.length === 0, "Smoke catalog must start empty")
     const workspace = await api.catalog.createWorkspace("Agent smoke workspace", [{ path: context.repository }])
     workspaceId = workspace.id
+    const configuredProvider = await api.providers.create({ template: "codex", name: "Smoke Codex", binaryPath: `${context.repository}/smoke-codex`, env: { DESKFLEET_SMOKE_PROFILE: "configured" } })
+    providerId = configuredProvider.id
     await until(() => [...document.querySelectorAll("[data-composer-context]")].some(element => element.textContent?.includes(workspace.name)), "New Session workspace target")
     require(location.hash === "#/", "Initial route must be New Session")
+    await expandConfiguration()
+    await selectConfiguration("agent", providerId)
+    require(configurationControl("agent")?.textContent?.includes("Smoke Codex"), "Agent submenu must select the configured provider")
+    await selectConfiguration("model", "fast")
+    await selectConfiguration("reasoning", "high")
+    require((await api.catalog.list()).workspaces[0]!.worktrees.length === 1, "Draft model discovery must not create a managed Session Worktree")
+    await collapseConfiguration()
     await send("Smoke first prompt", "Send")
     await until(() => /^#\/sessions\/[0-9]+$/u.test(location.hash), "Created Session route")
     sessionId = location.hash.split("/").at(-1)!
@@ -152,14 +197,22 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     require(permissions()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id") === permissionId, "Returning created a second permission request")
     await click("Allow smoke edit", () => permissions()!)
     await until(() => !!conversation()?.innerText.includes("queued reply") && !button("Cancel turn") && !backlog(), "Backlog execution after permission and first turn completion")
+    await expandConfiguration()
+    require(configurationControl("agent")?.disabled && configurationControl("agent")?.dataset.value === providerId, "A running Session must retain its selected provider")
+    require(await selectedConfiguration("model") === "fast" && await selectedConfiguration("reasoning") === "high", "A running Session must retain its draft model and reasoning selections")
+    await selectConfiguration("model", "balanced")
+    require(await selectedConfiguration("reasoning") === "medium", "Changing the Session model must refresh its provider-supplied reasoning configuration")
+    await collapseConfiguration()
+    await send("Smoke changed model prompt", "Send")
+    await until(() => !!conversation()?.innerText.includes("changed model reply") && !button("Cancel turn"), "Prompt with updated Session model")
     const catalog = await api.catalog.list()
     const worktrees = catalog.workspaces.find(value => value.id === workspaceId)!.worktrees.filter(value => value.sessionId === sessionId)
     require(worktrees.length === 1 && worktrees[0]!.directories[0]?.path !== context.repository, "Session must own exactly one derived Git Worktree")
     worktreeId = worktrees[0]!.id
   } else {
-    require(sessionId && workspaceId && worktreeId, "Restore identities are required")
+    require(sessionId && workspaceId && worktreeId && providerId, "Restore identities are required")
     await openSession(sessionId)
-    await until(() => !!conversation()?.innerText.includes("queued reply"), "Conversation replay after daemon restart")
+    await until(() => !!conversation()?.innerText.includes("changed model reply"), "Conversation replay after daemon restart")
     require(![...document.querySelectorAll('[role="status"]')].some(element => /stopped|interrupted|Resume/u.test(element.textContent ?? "")), "An interrupted agent must not ask to be resumed")
     const workspace = (await api.catalog.list()).workspaces.find(value => value.id === workspaceId)
     require(workspace?.worktrees.some(value => value.id === worktreeId && value.sessionId === sessionId), "Restart replaced the Session's Worktree")
@@ -198,9 +251,11 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     const recreated = await api.terminal.list()
     require(recreated.length === 1 && recreated[0]!.id !== shells[0]!.id && recreated[0]!.worktreeId === worktreeId, "The reopened panel must create exactly one new shell in the same Session Worktree")
   }
-  require(sessionId && workspaceId && worktreeId, "Session resource identities were missing")
+  require(sessionId && workspaceId && worktreeId && providerId, "Session resource identities were missing")
+  require(await selectedConfiguration("model") === "balanced", "The Session's selected model must survive history replay")
+  require(configurationControl("agent")?.dataset.value === providerId && configurationControl("agent")?.textContent?.includes("Smoke Codex"), "The Session's configured provider must survive history replay")
   const permissionId = conversation()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id")!
-  return { sessionId, workspaceId, worktreeId, permissionId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }
+  return { sessionId, workspaceId, worktreeId, providerId, permissionId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }
 }
 
 registerRendererScheme()

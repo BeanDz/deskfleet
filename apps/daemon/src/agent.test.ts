@@ -46,6 +46,8 @@ test("ACP forwards session context, updates, and permission decisions", { timeou
   }
   const created = await connection.newSession(request)
   assert.deepEqual(created._meta?.request, request)
+  const configured = await connection.setConfigOption({ sessionId: created.sessionId, configId: "model", value: "other-model" })
+  assert.equal(configured.configOptions[0]?.currentValue, "other-model")
   const result = await connection.prompt({ sessionId: created.sessionId, prompt })
   assert.deepEqual(result, {
     stopReason: "end_turn",
@@ -244,4 +246,18 @@ test("patched Codex steering preserves the opt-in and never starts a detached fa
       assert.equal(injected, scenario === "idle" ? 0 : 1)
     })
   }
+})
+
+test("ACP abort during initialization stops the child process", { timeout: 15_000 }, async context => {
+  const directory = mkdtempSync(join(tmpdir(), "deskfleet-acp-abort-"))
+  context.after(() => rmSync(directory, { recursive: true, force: true }))
+  const exitFile = join(directory, "exit")
+  const controller = new AbortController()
+  const pending = connectAcpProcess({
+    ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "wait-init", DESKFLEET_TEST_EXIT_FILE: exitFile },
+  }, { onUpdate() {}, signal: controller.signal })
+  const rejected = assert.rejects(pending, /disconnected/)
+  setTimeout(() => controller.abort(new Error("disconnected")), 500)
+  await rejected
+  assert.equal(readFileSync(exitFile, "utf8"), "0")
 })

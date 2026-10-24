@@ -5,7 +5,6 @@ import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
-import ProviderPicker from "../components/composer/ProviderPicker.vue"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useLayoutStore } from "../stores/layout.ts"
@@ -51,7 +50,5 @@ async function submit(): Promise<void> {
     <p v-if="newSessionTarget?.machine.online && providers.error" role="alert" class="max-w-xl text-sm text-ui-danger">{{ providers.error }}</p>
     <p v-else-if="newSessionTarget?.machine.online && providers.ready && !providers.providers.length" class="max-w-xl text-center text-sm text-ui-text-muted">{{ t('providers.noneConfigured') }} <RouterLink :to="{ name: 'settings-agents' }" class="underline">{{ t('providers.manage') }}</RouterLink></p>
   </div>
-  <SessionComposer v-model="draft" v-model:context="sessionContext" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit">
-    <template #provider><ProviderPicker v-model="providers.selectedId" :providers="providers.providers" :disabled="submitting || !newSessionTarget?.machine.online || !providers.ready" /></template>
-  </SessionComposer>
+  <SessionComposer v-model="draft" v-model:context="sessionContext" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit" />
 </template>

@@ -12,6 +12,7 @@ import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from ".
 import { AgentProviders } from "./agent-providers.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { AgentSessions } from "./agent-sessions.ts"
+import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentActor, AgentReceipt, AgentSnapshot } from "./agent-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 
@@ -21,6 +22,16 @@ class Provider implements AgentProvider {
   id = "fixture"
   client!: AgentClient
   prompts: string[] = []
+  promptConfigurations: { model: string; effort: string }[] = []
+  model = "first"
+  effort = "high"
+  failConfiguration = false
+  configurationWait?: Promise<void>
+  configurationAttempts: acp.SetSessionConfigOptionRequest[] = []
+  configuration(): acp.SessionConfigOption[] {
+    return [{ id: "model", category: "model", name: "Model", type: "select", currentValue: this.model, options: ["first", "second"].map(value => ({ value, name: value })) },
+      { id: "reasoning", category: "thought_level", name: "Reasoning", type: "select", currentValue: this.effort, options: ["low", "high"].map(value => ({ value, name: value })) }]
+  }
   steers: string[] = []
   resumes: string[] = []
   cwds: string[] = []
@@ -33,14 +44,25 @@ class Provider implements AgentProvider {
   resumeWait?: { promise: Promise<void>; reject(error: Error): void }
   active?: { resolve: (result: acp.PromptResponse) => void; done: Promise<acp.PromptResponse> }
   async connect(config: AgentConfig, client: AgentClient): Promise<AgentConnection> {
+    this.model = "first"
+    this.effort = "high"
     this.client = client
     this.clients.push(client)
     this.configs.push(structuredClone(config))
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {} } }, _meta: { steering: { supported: true, supportsPromptRequired: true } } },
-      newSession: async params => { this.cwds.push(params.cwd); return { sessionId: "provider-conversation" } },
-      resume: async params => { this.resumes.push(params.sessionId); await this.resumeWait?.promise; return {} },
+      newSession: async params => { this.cwds.push(params.cwd); return { sessionId: "provider-conversation", configOptions: this.configuration() } },
+      resume: async params => { this.resumes.push(params.sessionId); await this.resumeWait?.promise; return { configOptions: this.configuration() } },
+      setConfigOption: async params => {
+        this.configurationAttempts.push(params)
+        await this.configurationWait
+        if (this.failConfiguration) throw new Error("Cannot configure provider")
+        if (params.configId === "model") { this.model = String(params.value); this.effort = "high" }
+        else this.effort = String(params.value)
+        return { configOptions: this.configuration() }
+      },
       prompt: async params => {
+        this.promptConfigurations.push({ model: this.model, effort: this.effort })
         this.prompts.push(params.prompt.map(item => item.type === "text" ? item.text : "").join(""))
         let resolve!: (result: acp.PromptResponse) => void
         const done = new Promise<acp.PromptResponse>(finish => { resolve = finish })
@@ -80,7 +102,7 @@ async function until<T>(read: () => Promise<T>, predicate: (value: T) => boolean
   throw new Error("Timed out waiting for Agent state")
 }
 
-async function setup(t: { after(callback: () => Promise<void>): void }) {
+async function setup(t: { after(callback: () => Promise<void>): void }, selection: AgentConfigurationSelection = {}, failConfiguration = false) {
   const directory = await mkdtemp(join(tmpdir(), "df-agent-session-"))
   const repository = join(directory, "repository")
   await mkdir(repository)
@@ -94,6 +116,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }) {
   await catalog.init()
   const workspace = await catalog.native.createWorkspace("Fixture", [{ path: repository }])
   const provider = new Provider()
+  provider.failConfiguration = failConfiguration
   const providers = new AgentProviders(daemon, provider)
   await providers.init()
   const service = new AgentSessions(catalog, catalog.native, provider, providers)
@@ -101,7 +124,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }) {
   const actor: AgentActor = { ...service.actor(), kind: "user", userId: "alice" }
   const bob: AgentActor = { ...actor, userId: "bob", sourceMachine: { originId: "other-origin", id: "2" } }
   t.after(async () => { try { await service.close() } finally { await catalog.close(); await rm(directory, { recursive: true, force: true }) } })
-  const create = { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "worktree" }
+  const create = { workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "worktree", ...selection }
   const snapshot = await service.handle("_deskfleet/session/create", create, actor) as AgentSnapshot
   assert.equal(snapshot.session.lifecycle, "ready")
   const sessionId = snapshot.session.id
@@ -298,8 +321,10 @@ test("shutdown closes a provider whose resume RPC is still waiting", { timeout: 
   f.provider.resumeWait = { promise: new Promise<void>((_, fail) => { reject = fail }), reject: error => reject(error) }
   const resuming = f.service.handle("_deskfleet/session/resume", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor).catch(error => error)
   await until(async () => f.provider.resumes.length, count => count === 1)
+  const reading = f.service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, f.actor).catch(error => error)
   await f.service.close()
   assert.match(String(await resuming), /Provider connection closed/u)
+  assert.match(String(await reading), /Agent service is stopping/u)
   assert.equal((await f.read()).runs.at(-1)?.state, "stopped")
 })
 
@@ -438,6 +463,117 @@ test("a message to an agent that cannot resume its conversation is rejected inst
   assert.equal((await f.read()).inputs.some(input => input.content.some(block => block.type === "text" && block.text === "lost")), false)
 })
 
+
+test("draft selections reach the first prompt and live configuration survives daemon restart", async t => {
+  const f = await setup(t, { model: "second", reasoningEffort: "low" })
+  await f.submit("selected draft").result
+  await until(f.read, () => f.provider.prompts.length === 1)
+  assert.deepEqual(f.provider.promptConfigurations[0], { model: "second", effort: "low" })
+  await assert.rejects(f.service.handle("_deskfleet/session/configure", {
+    sessionId: f.sessionId, operationId: randomUUID(), model: "first",
+  }, f.actor), /current turn/)
+  f.provider.finish()
+  await until(f.read, state => state.turns.every(turn => turn.state === "completed"))
+  const operation = { sessionId: f.sessionId, operationId: randomUUID(), model: "first", reasoningEffort: "low" }
+  const changed = await f.service.handle("_deskfleet/session/configure", operation, f.actor) as AgentConfiguration
+  assert.equal(changed.models?.currentValue, "first")
+  assert.equal(changed.reasoningEfforts?.currentValue, "low")
+  assert.deepEqual(await f.service.handle("_deskfleet/session/configure", operation, f.actor), changed)
+  await f.service.close()
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  await restored.init()
+  t.after(() => restored.close())
+  const connections = f.provider.clients.length
+  assert.deepEqual(await restored.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, f.actor), changed)
+  assert.equal(f.provider.clients.length, connections, "Reading a stopped Session never starts its provider")
+  await restored.handle("_deskfleet/input/submit", {
+    sessionId: f.sessionId, operationId: randomUUID(), content: [{ type: "text", text: "after restart" }], delivery: "backlog",
+  }, f.actor)
+  await until(f.read, () => f.provider.prompts.length === 2)
+  assert.deepEqual(f.provider.promptConfigurations[1], { model: "first", effort: "low" })
+  await restored.close()
+})
+
+test("initial selections survive failed provider startup and apply on retry", async t => {
+  const f = await setup(t, { model: "second", reasoningEffort: "low" }, true)
+  assert.match((await f.read()).session.error!, /Cannot configure provider/)
+  f.provider.failConfiguration = false
+  await f.submit("retry startup").result
+  await until(f.read, () => f.provider.prompts.length === 1)
+  assert.deepEqual(f.provider.promptConfigurations[0], { model: "second", effort: "low" })
+})
+
+test("an unavailable initial model can be replaced before the backlog is delivered", async t => {
+  const f = await setup(t, { model: "retired-model", reasoningEffort: "low" })
+  assert.match((await f.read()).session.error!, /Unsupported agent model: retired-model/)
+  const connections = f.provider.clients.length
+  const configuration = await f.service.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, f.actor) as AgentConfiguration
+  assert.equal(configuration.models?.currentValue, "retired-model")
+  assert.deepEqual(configuration.models?.options.map(option => option.id), ["first", "second"])
+  assert.equal(f.provider.clients.length, connections, "Failed startup already supplied available choices")
+  const pending = await f.submit("waiting for replacement").result
+  await until(f.read, state => state.runs.length === 2 && state.runs.at(-1)?.state === "failed")
+  assert.deepEqual(f.provider.prompts, [])
+  const replaced = await f.service.handle("_deskfleet/session/configure", {
+    sessionId: f.sessionId, operationId: randomUUID(), model: "second",
+  }, f.actor) as AgentConfiguration
+  assert.equal(replaced.models?.currentValue, "second")
+  assert.equal(replaced.reasoningEfforts?.currentValue, "high", "A replacement model uses its default effort")
+  await until(f.read, () => f.provider.prompts.length === 1)
+  assert.deepEqual(f.provider.promptConfigurations, [{ model: "second", effort: "high" }])
+  assert.equal((await f.read()).inputs[0]?.id, pending.inputId)
+  assert.equal((await f.read()).session.error, undefined)
+})
+
+test("failed selection discovery after restart keeps the saved choice and backlog until explicit replacement", async t => {
+  const f = await setup(t, { model: "second", reasoningEffort: "retired-effort" })
+  await f.submit("waiting for valid effort").result
+  await until(f.read, state => state.runs.length === 2 && state.runs.at(-1)?.state === "failed")
+  await f.service.close()
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider)
+  await restored.init()
+  t.after(() => restored.close())
+  const before = await f.read()
+  const closes = f.provider.closeCount
+  const configuration = await restored.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, f.actor) as AgentConfiguration
+  assert.equal(configuration.models?.currentValue, "second")
+  assert.equal(configuration.reasoningEfforts?.currentValue, "retired-effort")
+  assert.deepEqual(configuration.reasoningEfforts?.options.map(option => option.id), ["low", "high"])
+  assert.equal(f.provider.closeCount, closes + 1, "Discovery closes its temporary provider")
+  assert.deepEqual(await f.read(), before, "Discovery does not change the failed Session or confirmed choices")
+  assert.deepEqual(f.provider.prompts, [])
+  await assert.rejects(restored.handle("_deskfleet/session/resume", {
+    sessionId: f.sessionId, operationId: randomUUID(),
+  }, f.actor), /Unsupported agent reasoning_effort: retired-effort/)
+  assert.deepEqual(f.provider.prompts, [])
+  const changed = await restored.handle("_deskfleet/session/configure", {
+    sessionId: f.sessionId, operationId: randomUUID(), reasoningEffort: "low",
+  }, f.actor) as AgentConfiguration
+  assert.equal(changed.models?.currentValue, "second")
+  assert.equal(changed.reasoningEfforts?.currentValue, "low")
+  await until(f.read, () => f.provider.prompts.length === 1)
+  assert.deepEqual(f.provider.promptConfigurations, [{ model: "second", effort: "low" }])
+  await restored.close()
+})
+
+test("an explicit replacement waits for a failing retry then starts with the new model", async t => {
+  const f = await setup(t, { model: "second", reasoningEffort: "low" }, true)
+  let release!: () => void
+  f.provider.configurationWait = new Promise<void>(resolve => { release = resolve })
+  const attempts = f.provider.configurationAttempts.length
+  await f.submit("queued during failed retry").result
+  await until(f.read, () => f.provider.configurationAttempts.length > attempts)
+  const operationId = randomUUID()
+  const replacing = f.service.handle("_deskfleet/session/configure", {
+    sessionId: f.sessionId, operationId, model: "first",
+  }, f.actor)
+  await until(() => f.service.journal.command(operationId), command => command?.status === "accepted")
+  release()
+  await replacing
+  await until(f.read, () => f.provider.prompts.length === 1)
+  assert.deepEqual(f.provider.promptConfigurations, [{ model: "first", effort: "high" }])
+})
+
 test("Sessions retain the chosen provider ID and read edited launch settings on the next run", async t => {
   const f = await setup(t)
   const configured = await f.providers.create({
@@ -474,6 +610,11 @@ test("unknown providers cannot allocate Sessions and removing one preserves its 
   }, f.actor), /provider.*(unavailable|not found)/iu)
   assert.equal((await f.service.journal.list()).length, 1)
   await f.providers.remove("codex")
+  const configuration = await f.service.handle("_deskfleet/session/configure", {
+    sessionId: f.sessionId, operationId: randomUUID(), model: "second",
+  }, f.actor) as AgentConfiguration
+  assert.deepEqual(configuration.provider, { id: "codex", name: "Codex" })
+  assert.equal(configuration.models?.currentValue, "second")
   assert.equal(f.provider.closeCount, 0)
   f.provider.finishImmediately = true
   await f.submit("still running").result
@@ -488,4 +629,43 @@ test("unknown providers cannot allocate Sessions and removing one preserves its 
   assert.match(state.session.error ?? "", /provider.*(unavailable|not found)/iu)
   assert.equal(state.turns[0]?.state, "completed")
   assert.equal(f.provider.configs.length, 1)
+})
+
+
+test("failed configuration recovery keeps the configured provider and applies its updated launch settings", async t => {
+  const f = await setup(t)
+  const configured = await f.providers.create({ template: "codex", name: "Work account", binaryPath: "/tools/work-codex", env: { CODEX_HOME: "/work/account" } })
+  const failed = await f.service.handle("_deskfleet/session/create", {
+    ...f.create, operationId: randomUUID(), provider: configured.id, model: "second", reasoningEffort: "retired",
+  }, f.actor) as AgentSnapshot
+  const sessionId = failed.session.id
+  assert.match(failed.session.error!, /Unsupported agent reasoning_effort: retired/)
+  await f.service.close()
+  await f.providers.update(configured.id, { name: "Renamed account", binaryPath: "/tools/updated-codex", env: { CODEX_HOME: "/work/updated" } })
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers)
+  await restored.init()
+  t.after(() => restored.close())
+  const before = await restored.journal.read(sessionId)
+  const configuration = await restored.handle("_deskfleet/session/configuration", { sessionId }, f.actor) as AgentConfiguration
+  const identity = { id: configured.id, name: "Renamed account" }
+  const launch = { name: "Renamed account", binaryPath: "/tools/updated-codex", env: { CODEX_HOME: "/work/updated" } }
+  assert.deepEqual(configuration.provider, identity)
+  assert.equal(configuration.models?.currentValue, "second")
+  assert.equal(configuration.reasoningEfforts?.currentValue, "retired")
+  assert.deepEqual(f.provider.configs.at(-1), launch)
+  assert.deepEqual(await restored.journal.read(sessionId), before)
+  assert.deepEqual(f.provider.prompts, [])
+  const changed = await restored.handle("_deskfleet/session/configure", {
+    sessionId, operationId: randomUUID(), reasoningEffort: "low",
+  }, f.actor) as AgentConfiguration
+  assert.deepEqual(changed.provider, identity)
+  assert.equal(changed.models?.currentValue, "second")
+  assert.equal(changed.reasoningEfforts?.currentValue, "low")
+  assert.deepEqual(f.provider.configs.at(-1), launch)
+  await restored.handle("_deskfleet/input/submit", {
+    sessionId, operationId: randomUUID(), content: [{ type: "text", text: "after recovery" }], delivery: "backlog",
+  }, f.actor)
+  await until(() => restored.journal.read(sessionId), () => f.provider.prompts.length === 1)
+  assert.deepEqual(f.provider.promptConfigurations, [{ model: "second", effort: "low" }])
+  await restored.close()
 })

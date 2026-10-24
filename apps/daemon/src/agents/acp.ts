@@ -20,6 +20,7 @@ export interface AgentProcess {
 }
 
 export interface AgentClient {
+  signal?: AbortSignal
   onUpdate(notification: acp.SessionNotification): void | Promise<void>
   onClose?(reason: Error): void
   requestPermission?(
@@ -31,6 +32,7 @@ export interface AgentClient {
 export interface AgentConnection {
   readonly initialization: acp.InitializeResponse
   newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse>
+  setConfigOption(params: acp.SetSessionConfigOptionRequest): Promise<acp.SetSessionConfigOptionResponse>
   resume(params: acp.ResumeSessionRequest): Promise<acp.ResumeSessionResponse>
   prompt(params: acp.PromptRequest): Promise<acp.PromptResponse>
   /** Never starts a detached provider turn. Inactive inputs need a normal prompt. */
@@ -49,6 +51,7 @@ export function supportsSteering(initialization: acp.InitializeResponse): boolea
 }
 
 export async function connectAcpProcess(launch: AgentProcess, client: AgentClient): Promise<AgentConnection> {
+  client.signal?.throwIfAborted()
   const child = spawn(launch.command, launch.args ?? [], {
     env: Object.fromEntries(
       [...Object.entries(process.env), ...Object.entries(launch.env ?? {})]
@@ -89,6 +92,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   let closing: Promise<void> | undefined
   function close(): Promise<void> {
     if (closing) return closing
+    client.signal?.removeEventListener("abort", abort)
     child.stdin!.end()
     connection.close()
     // Give adapters time to stop their own agent subprocesses after stdin EOF.
@@ -97,6 +101,9 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     closing = exited.finally(() => clearTimeout(timeout))
     return closing
   }
+  const abort = () => { connection.close(client.signal?.reason); void close() }
+  client.signal?.addEventListener("abort", abort, { once: true })
+  if (client.signal?.aborted) abort()
   void connection.closed.then(() => {
     const reason: unknown = connection.signal.reason
     try {
@@ -122,6 +129,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     return {
       initialization,
       newSession: params => connection.agent.request(acp.methods.agent.session.new, params),
+      setConfigOption: params => connection.agent.request(acp.methods.agent.session.setConfigOption, params),
       resume: params => {
         if (!initialization.agentCapabilities?.sessionCapabilities?.resume) {
           return Promise.reject(new Error("The agent does not support session resume"))

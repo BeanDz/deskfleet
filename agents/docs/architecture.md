@@ -244,7 +244,7 @@ in `<daemon directory>/agent-providers.json`. Templates are immutable after
 creation. A Session retains its configured provider ID, and each new provider
 process resolves the current settings. Editing or removing a provider does not
 stop existing processes or delete their history; a removed provider cannot
-start again. Configuration values remain outside the Session journal.
+start again. Provider launch settings remain outside the Session journal.
 
 The Codex template connects Codex CLI through the bundled
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The shared
@@ -284,6 +284,14 @@ in the daemon's SQLite catalog. Clients connect to a daemon ACP facade over
 DataChannel; the daemon remains the sole ACP client toward each provider process.
 Credentials remain on the executing machine. ACP approval callbacks do not confine
 agents that execute tools directly.
+
+The composer discovers model and reasoning choices from the provider through the
+same ACP DataChannel facade. Draft discovery uses a temporary provider session in
+the Workspace's default directory without creating a managed Session or Worktree.
+Session creation applies the selected configuration before delivering prompts;
+existing Session controls operate on that Session's provider connection.
+Configuration options and confirmed changes use the existing ACP event journal
+so attached viewers can follow them.
 
 All authorized users and devices can operate on a Session concurrently, without
 control ownership or transfer. Commands record the initiating user and source

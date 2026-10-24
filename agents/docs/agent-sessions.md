@@ -264,7 +264,10 @@ conversation API. Remote authenticated signaling can reuse this facade.
 | --- | --- |
 | `initialize` | Negotiate protocol, facade capabilities, byte limit, and catalog identity |
 | `_deskfleet/session/list` | Read persisted Session summaries |
-| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID and start it; return snapshot |
+| `_deskfleet/agent/configuration` | Discover provider model and reasoning choices for a draft in a Workspace's default directory |
+| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning selections, and start it; return snapshot |
+| `_deskfleet/session/configuration` | Read the Session's confirmed provider configuration |
+| `_deskfleet/session/configure` | Audit and apply model/reasoning changes to a Session |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
 | `_deskfleet/git/status` | Inspect the Session's captured checkouts, branch/HEAD, and staged/unstaged/untracked files |
@@ -290,6 +293,47 @@ or append journal events. Repository IDs select only checkouts resolved from
 that Session's paths. Diffs distinguish index changes from working-tree changes
 and include untracked file previews. Binary files and truncated patches are
 reported explicitly. Checkout errors do not hide healthy checkout results.
+
+### Model and reasoning configuration
+
+The composer's menu has Agent, Model, and Reasoning submenus. A draft can select
+any provider configured on its machine; an existing Session keeps its saved
+provider identity. Available models and efforts come from that provider's ACP
+select options, including grouped options. Draft discovery resolves the selected
+provider's current launch settings, creates a temporary provider session in the
+Workspace's default directory, sends no prompt, and closes the connection. It
+times out after 45 seconds and stops when the daemon shuts down. Launch settings
+and environment values stay outside the configuration response and journal.
+
+New Session commands carry optional model and reasoning selections. Startup
+applies the model first, then an effort supported by that model, before draining
+the backlog. Confirmed configuration is retained as ACP `config_option_update`
+events and restored when the provider resumes. Until initial configuration
+succeeds, ordinary startup retries retain the choices from the create command.
+When an ACP response omits its optional configuration list, startup uses options
+received while opening the provider session or the last confirmed catalog. Saved
+values are reapplied to the provider rather than assumed to describe its current
+state. An explicitly empty list remains authoritative; after a failed startup,
+an empty cache still permits discovery of replacement choices. Discovered option
+metadata is retained for an explicit replacement if startup again omits its list.
+
+Reading configuration does not start or resume the managed Session. After a
+failed startup, it offers the provider's available choices while retaining the
+saved selection for display. If those choices are no longer in memory, a
+temporary discovery session retrieves them without delivering queued inputs or
+changing the saved configuration. An explicit replacement overrides the failing
+selection during startup; choosing another model lets that model supply its
+default reasoning effort unless the user also specifies an effort.
+
+Changing configuration is an audited, idempotent Session command; it resumes a
+stopped provider if needed.
+Changes require no active turn and pause backlog dispatch while the provider
+confirms the options. Attached clients project the committed updates,
+so a change from another client is reflected in an open selector.
+Notifications received during startup configuration or an explicit change cannot
+overwrite the confirmed response. A queued notification from before a newer
+configuration operation is also discarded. Later unsolicited provider updates,
+such as slash-command changes, remain visible and are saved for resume.
 
 ## Replay, recovery, and UI
 

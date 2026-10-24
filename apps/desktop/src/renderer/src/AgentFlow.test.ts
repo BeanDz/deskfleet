@@ -28,6 +28,7 @@ function emit(kind: AgentEvent["kind"], payload: AgentEvent["payload"]): void {
   transport.receive({ method: "_deskfleet/session/event", params: structuredClone(event) })
 }
 beforeEach(async () => {
+  window.localStorage.removeItem("deskfleet.agent-configuration")
   snapshot = agentSnapshot(); snapshot.session.workspaceId = workspaceId
   events = []
   const catalog = catalogFixture()
@@ -36,6 +37,9 @@ beforeEach(async () => {
   transport.call.mockReset().mockImplementation(async (method: string, params: Record<string, unknown>) => {
     if (method === "initialize") return {}
     if (method === "_deskfleet/session/list") return []
+    if (method === "_deskfleet/agent/configuration") return {
+      provider: { id: String(params.provider), name: String(params.provider) }, models: null, reasoningEfforts: null,
+    }
     if (method === "_deskfleet/session/create") {
       snapshot.session.title = String(params.title)
       snapshot.session.provider = String(params.provider)
@@ -106,20 +110,27 @@ test("new sessions use the selected configured provider and show its name", asyn
   })
   await useProvidersStore(pinia).refresh()
   await flushPromises()
-  await wrapper.get('[aria-label="Choose provider"]').setValue("work-codex")
+  await wrapper.get('[data-agent-configuration-trigger]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[data-agent-control="agent"]').trigger("click")
+  await wrapper.get('[role="menuitemradio"][data-value="work-codex"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.findAll('[data-agent-configuration-trigger]')).toHaveLength(1)
+  expect(wrapper.find('[aria-label="Choose provider"]').exists()).toBe(false)
+  expect(transport.call).toHaveBeenCalledWith("_deskfleet/agent/configuration", { provider: "work-codex", workspaceId })
   expect(wrapper.find('[data-provider-icon="deepseek"]').exists()).toBe(true)
   await wrapper.get("textarea").setValue("Use the work account")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
   expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ provider: "work-codex" })
-  expect(wrapper.get('[title="Agent provider"]').text()).toContain("Work Codex")
-  expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
+  expect(wrapper.get('[data-agent-configuration-trigger]').text()).toContain("Work Codex")
+  expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
   expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
 
   vi.mocked(window.deskfleet.providers.list).mockResolvedValue({ templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "claude", env: {} }] })
   await useProvidersStore(pinia).refresh()
   await flushPromises()
-  expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
+  expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
   expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
 })
 
@@ -136,23 +147,23 @@ test("restored sessions show pending provider identity until its configuration l
   pinia = createPinia()
   wrapper = mount(App, { global: { plugins: [pinia, router, i18n], stubs: { Teleport: true, LiveTerminal: true } } })
   await flushPromises()
-  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Agent provider")
-  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(true)
+  expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Agent")
+  expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(true)
   expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(true)
   expect(wrapper.text()).not.toContain("Provider unavailable")
 
   read.resolve({ templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} }] })
   await flushPromises()
-  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Work Codex")
-  expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
+  expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Work Codex")
+  expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
   expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
-  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(false)
+  expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(false)
 
   list.mockResolvedValue({ templates: [], providers: [] })
   await useProvidersStore(pinia).refresh()
   await flushPromises()
-  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Provider unavailable")
-  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(false)
+  expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Provider unavailable")
+  expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(false)
   expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(false)
 })
 
@@ -216,4 +227,37 @@ test("a Session's shells open in its bottom panel, belong to its Worktree, and s
   expect(dial).toHaveBeenCalledTimes(2)
   expect(wrapper.get('[aria-label="Session terminals"]').findAll('[role="tab"]')).toHaveLength(1)
   window.localStorage.removeItem("deskfleet.terminal-panel-open")
+})
+
+
+test("the selected model and effort reach a newly created Session through the agent channel", async () => {
+  const original = transport.call.getMockImplementation()!
+  let model = "sequoia"
+  let effort = "medium"
+  transport.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    if (method === "_deskfleet/agent/configuration") {
+      model = String(params.model ?? model)
+      effort = String(params.reasoningEffort ?? "medium")
+      return {
+        provider: { id: "codex", name: "Codex" },
+        models: { id: "model", currentValue: model, options: [{ id: "sequoia", name: "Sequoia" }, { id: "orbit", name: "Orbit" }] },
+        reasoningEfforts: { id: "effort", currentValue: effort, options: [{ id: "medium", name: "Medium" }, { id: "high", name: "High" }] },
+      }
+    }
+    return original(method, params)
+  })
+  await wrapper.get('[aria-label="Configure agent: Codex"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[data-agent-control="model"]').trigger("click")
+  await wrapper.get('[role="menuitemradio"][data-value="orbit"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[data-agent-control="reasoning"]').trigger("click")
+  await wrapper.get('[role="menuitemradio"][data-value="high"]').trigger("click")
+  await flushPromises()
+  await wrapper.get("textarea").setValue("Use the selected reasoning model")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ model: "orbit", reasoningEffort: "high" })
+  expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/input/submit")).toBe(true)
+  window.localStorage.removeItem("deskfleet.agent-configuration")
 })
