@@ -122,6 +122,23 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   }
   await until(() => ![...document.querySelectorAll('[role="status"]')].some(element => element.textContent?.includes("Restoring conversation")), "History replay completed")
   await verifyConversation()
+  if (context.phase === "restore") {
+    // A Session shell opens in the bottom panel, in the Session's own Worktree.
+    await click("Show terminal")
+    const panel = () => document.querySelector<HTMLElement>('[aria-label="Session terminals"]')
+    await until(() => !!panel(), "Session terminal panel")
+    await click("New shell", () => panel()!)
+    await until(() => !!panel()?.querySelector('[data-connection="connected"]'), "Session shell connection")
+    const screen = () => panel()?.querySelector(".xterm-rows")?.textContent ?? ""
+    await until(() => screen().trim().length > 0, "Session shell prompt")
+    // Type through xterm's own input element, as a user would.
+    const input = panel()!.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")!
+    for (const key of "pwd\r") input.dispatchEvent(new KeyboardEvent("keypress", { key, charCode: key.charCodeAt(0), bubbles: true }))
+    await until(() => screen().includes("session-worktrees"), "Session shell runs in the Session's Worktree")
+    const shells = await api.terminal.list()
+    require(shells.length === 1 && shells[0]!.worktreeId === worktreeId, "The Session shell must belong to the Session's Worktree")
+    require(!document.querySelector('aside a[href^="#/terminals/"]'), "Session shells must stay out of the sidebar")
+  }
   require(sessionId && workspaceId && worktreeId, "Session resource identities were missing")
   const permissionId = conversation()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id")!
   return { sessionId, workspaceId, worktreeId, permissionId, conversationEntries: conversation()!.querySelectorAll("[data-conversation-entry]").length }

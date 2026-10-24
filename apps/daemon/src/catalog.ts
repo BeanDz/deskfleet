@@ -10,6 +10,7 @@ import { ManagedSessionWorktrees } from "./session-worktrees.ts"
 export class DaemonCatalog {
   readonly #directory: string
   readonly #listeners = new Set<(event: CatalogEvent) => void>()
+  readonly #releasing = new Set<(worktreeId: string) => Promise<void>>()
   #catalog: NativeCatalog | undefined
   #sessions: ManagedSessionWorktrees | undefined
 
@@ -24,6 +25,17 @@ export class DaemonCatalog {
   onChange(listener: (event: CatalogEvent) => void): () => void {
     this.#listeners.add(listener)
     return () => this.#listeners.delete(listener)
+  }
+
+  /** Resources owned by a Session's Worktree, such as its terminals, end before the Worktree is removed. */
+  onSessionRelease(listener: (worktreeId: string) => Promise<void>): () => void {
+    this.#releasing.add(listener)
+    return () => this.#releasing.delete(listener)
+  }
+
+  /** The Worktree a Session owns, if its context was provisioned. */
+  async sessionWorktree(sessionId: string) {
+    return (await this.native.snapshot()).workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === sessionId)
   }
 
   get native(): NativeCatalog {
@@ -64,10 +76,13 @@ export class DaemonCatalog {
       case "workspaceSessionCreate":
         result = await this.#sessions.create(request.params.workspaceId)
         break
-      case "workspaceSessionDestroy":
+      case "workspaceSessionDestroy": {
+        const worktree = await this.sessionWorktree(request.params.sessionId)
+        if (worktree) for (const release of this.#releasing) await release(worktree.id)
         await this.#sessions.destroy(request.params.sessionId)
         result = null
         break
+      }
     }
     this.changed()
     return result
@@ -78,6 +93,7 @@ export class DaemonCatalog {
     this.#catalog = undefined
     this.#sessions = undefined
     this.#listeners.clear()
+    this.#releasing.clear()
     await catalog?.close()
   }
 }

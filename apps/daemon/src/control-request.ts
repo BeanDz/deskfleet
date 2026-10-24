@@ -1,5 +1,5 @@
 import type { ControlMethod, ControlMethods, ControlRequest } from "./control-protocol.ts"
-import { validateCatalogParams } from "./catalog-protocol.ts"
+import { resourceId, validateCatalogParams } from "./catalog-protocol.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object")
@@ -50,6 +50,7 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
         if ((params[key] as number) > 1000) throw new Error(`Invalid terminal ${key}`)
       }
       if (params.cwd !== undefined && (typeof params.cwd !== "string" || params.cwd.length > 4096)) throw new Error("Invalid terminal working directory")
+      if (params.worktreeId !== undefined) resourceId(params.worktreeId)
       break
     case "terminalHangup":
       sessionId(params.terminalId)

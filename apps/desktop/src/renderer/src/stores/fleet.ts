@@ -68,7 +68,15 @@ export const useFleetStore = defineStore("fleet", () => {
   const terminals = useTerminalsStore()
   const agents = useAgentSessionsStore()
   const localMachine = () => machines.value.find(({ id }) => id === "local-daemon")!
-  watch(() => terminals.sessions, sessions => { localMachine().terminals = sessions }, { immediate: true })
+  /** A terminal belongs to its owning Session Worktree, or to the machine. */
+  function applyTerminals(): void {
+    const machine = localMachine()
+    machine.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === undefined)
+    for (const workspace of machine.workspaces) for (const session of workspace.sessions) {
+      if (session.worktree) session.worktree.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === session.worktree!.id)
+    }
+  }
+  watch(() => terminals.sessions, applyTerminals, { immediate: true, deep: true })
   let refreshingTarget: Promise<LocalDesktopTarget> | null = null
   let refreshingCatalog: Promise<void> | null = null
   let refreshRequested = false
@@ -98,6 +106,8 @@ export const useFleetStore = defineStore("fleet", () => {
       }
       workspace.sessions = [...summaries.values()]
     }
+    // Every catalog rebuild passes through here; rebuilt Worktrees need their terminals again.
+    applyTerminals()
   }
   watch(() => agents.sessions, applySessionMetadata, { deep: true })
   function applySnapshot(snapshot: CatalogSnapshot): void {

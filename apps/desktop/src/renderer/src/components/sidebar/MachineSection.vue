@@ -118,17 +118,13 @@ const terminalLink = (terminalId: string) => ({ name: "terminal", params: { term
             <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
           </li>
           <li v-for="session in workspace.sessions" :key="session.id">
+            <!-- A Session's shells open in its bottom panel, not the sidebar. -->
             <TreeLink
               :to="{ name: 'session', params: { sessionId: session.id } }"
               :icon="Bot"
               :label="sessionLabel(session)"
               :depth="1"
             />
-            <ul>
-              <li v-for="terminal in session.worktree?.terminals ?? []" :key="terminal.id">
-                <TreeLink :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="2" />
-              </li>
-            </ul>
           </li>
         </ul>
       </li>

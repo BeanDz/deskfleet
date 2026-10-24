@@ -109,3 +109,25 @@ test("a stopped agent asks for nothing and the next message is simply sent", asy
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit").at(-1)?.[1]).toMatchObject({ content: [{ type: "text", text: "Keep going" }] })
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/resume")).toBe(false)
 })
+
+test("a Session's shells open in its bottom panel, belong to its Worktree, and stay out of the sidebar", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  await vi.waitFor(() => expect(router.currentRoute.value.params.sessionId).toBe("30"))
+  const dial = vi.spyOn(window.deskfleet.terminal, "dial").mockImplementation(async options => ({
+    id: options.terminalId, title: "new", cwd: "/worktree/new", cols: 80, rows: 24, status: "running",
+    ...(options.mode === "create" && options.worktreeId ? { worktreeId: options.worktreeId } : {}),
+  }))
+  expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
+  await wrapper.get('[aria-label="Show terminal"]').trigger("click")
+  await wrapper.get('[aria-label="Session terminals"]').findAll("button").find(item => item.text() === "New shell")!.trigger("click")
+  await flushPromises()
+  expect(dial).toHaveBeenCalledWith(expect.objectContaining({ mode: "create", worktreeId: "31" }))
+  expect(dial.mock.calls[0]![0]).not.toHaveProperty("cwd")
+  expect(wrapper.get('[aria-label="Session terminals"]').findAll('[role="tab"]')).toHaveLength(1)
+  expect(wrapper.get("aside").find('a[href^="#/terminals/"]').exists()).toBe(false)
+  await wrapper.get('[aria-label="Hide terminal"]').trigger("click")
+  expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
+  window.localStorage.removeItem("deskfleet.terminal-panel-open")
+})

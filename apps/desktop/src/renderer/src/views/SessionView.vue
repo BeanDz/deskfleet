@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { LoaderCircle } from "@lucide/vue"
+import { LoaderCircle, SquareTerminal } from "@lucide/vue"
+import { storeToRefs } from "pinia"
 import { computed, nextTick, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
@@ -11,7 +12,10 @@ import AgentConversation from "../components/session/AgentConversation.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
 import AgentPermissions from "../components/session/AgentPermissions.vue"
 import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
+import IconButton from "../components/common/IconButton.vue"
+import SessionTerminalPanel from "../components/terminal/SessionTerminalPanel.vue"
 import { useFleetStore } from "../stores/fleet.ts"
+import { useLayoutStore } from "../stores/layout.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 const props = defineProps<{ sessionId: string }>()
@@ -20,6 +24,7 @@ const router = useRouter()
 const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
+const { terminalPanelOpen } = storeToRefs(useLayoutStore())
 const location = computed(() => fleet.findSession(props.sessionId))
 const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
@@ -34,6 +39,8 @@ const resumeUnavailable = computed(() => snapshot.value?.session.lifecycle === "
 const draft = computed({ get: () => agents.drafts[props.sessionId] ?? "", set: value => { agents.drafts[props.sessionId] = value } })
 const unresolvedSubmission = computed(() => Object.values(agents.operations).some(operation => operation.sessionId === props.sessionId && operation.text === draft.value))
 const pending = computed(() => Object.values(agents.operations).filter(operation => operation.sessionId === props.sessionId && operation.error))
+// Shells need the Session's own Worktree on this machine.
+const terminalWorktree = computed(() => location.value?.machine.local && snapshot.value?.session.lifecycle === "ready" ? location.value.worktree : undefined)
 const empty = computed(() => !view.value?.loading && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
 const busy = ref(false)
 const actionError = ref<string | null>(null)
@@ -67,7 +74,7 @@ function remove(): void {
 <template>
   <PaneHeader>
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, location.workspace.name]" /></template>
-    <template v-if="snapshot" #actions><AgentSessionMenu :can-stop="runActive" :disabled="!connected || busy" :directory="snapshot.session.context === 'directory'" @stop="action(() => agents.stop(sessionId))" @delete="remove" /></template>
+    <template v-if="snapshot" #actions><IconButton v-if="terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" /><AgentSessionMenu :can-stop="runActive" :disabled="!connected || busy" :directory="snapshot.session.context === 'directory'" @stop="action(() => agents.stop(sessionId))" @delete="remove" /></template>
   </PaneHeader>
   <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @scroll="scroll">
     <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6 pb-10">
@@ -96,4 +103,5 @@ function remove(): void {
     </template>
   </div>
   <SessionComposer v-if="location" v-model="draft" :location="location" :provider="location.session.provider" :disabled="!connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
+  <SessionTerminalPanel v-if="terminalPanelOpen && terminalWorktree" :worktree="terminalWorktree" />
 </template>

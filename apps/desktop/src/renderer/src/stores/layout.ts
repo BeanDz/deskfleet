@@ -11,6 +11,9 @@ export const useLayoutStore = defineStore("layout", () => {
   const detailsTab = useLocalStorage<DetailsTab>("deskfleet.details-tab", "details")
   /** The execution context a new Session uses; the last choice is remembered. */
   const sessionContext = useLocalStorage<AgentSessionContext>("deskfleet.session-context", "worktree")
+  /** The Session terminal panel below the conversation. */
+  const terminalPanelOpen = useLocalStorage("deskfleet.terminal-panel-open", false)
+  const terminalPanelHeight = useLocalStorage("deskfleet.terminal-panel-height", 280)
 
   function toggleSidebar(): void {
     sidebarOpen.value = !sidebarOpen.value
@@ -20,5 +23,5 @@ export const useLayoutStore = defineStore("layout", () => {
     detailsOpen.value = !detailsOpen.value
   }
 
-  return { sidebarOpen, detailsOpen, detailsTab, sessionContext, toggleSidebar, toggleDetails }
+  return { sidebarOpen, detailsOpen, detailsTab, sessionContext, terminalPanelOpen, terminalPanelHeight, toggleSidebar, toggleDetails }
 })

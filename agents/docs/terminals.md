@@ -23,7 +23,16 @@ in a Workspace's first path with **Open terminal in default directory**, or in
 a selected directory with **Open terminal here**.
 The working directory is independent of resource ownership: those terminals
 remain under the local machine, and editing/deleting a Workspace does not retarget
-or close them. Local Workspace directory configuration is connected; remote machine
+or close them.
+
+A Session's terminals are owned by its Worktree. `terminalDial` accepts a
+`worktreeId`; the daemon rejects it unless the Worktree belongs to a Session and,
+without an explicit `cwd`, starts the shell in that Worktree's first directory.
+The owner is recorded in terminal metadata and survives daemon restart. These
+shells appear only in the Session's bottom panel, not in the sidebar or the
+machine terminal tabs. Leaving the Session detaches the panel; destroying the
+Session hangs up its terminals before the Worktree is removed. A future archived
+Session can release them the same way. Local Workspace directory configuration is connected; remote machine
 enrollment remains unimplemented.
 
 Navigating away detaches the view. Losing a peer, reloading the renderer, or
@@ -81,10 +90,12 @@ their acknowledged offset without discarding earlier output. An attachment
 receives `ready` after consuming the history present when it attached, allowing
 live input even if the process continues producing output.
 
-The renderer rebuilds its terminal from the recorded bytes. It initially keeps
-5,000 scrollback lines locally; **Load more history** increases that window and
-replays the retained daemon history. This client memory limit never truncates
-the daemon's files. History is terminal output, including control sequences;
+The renderer rebuilds its terminal from the recorded bytes and keeps 5,000
+scrollback lines locally. A future **Settings → Terminal → History size** will
+choose that window. This client memory limit never truncates the daemon's files.
+Each tab shows its connection as an icon, which reconnects a broken view, and
+titles itself with the title the running program sets (OSC 0/2), replayed from
+history after reattaching; until one is set it is numbered. History is terminal output, including control sequences;
 keystrokes that the shell does not echo are not recorded separately.
 
 ## Running and validation
@@ -92,7 +103,9 @@ keystrokes that the shell does not echo are not recorded separately.
 Start `mise run daemon:dev` and `mise run desktop:dev` separately. Use **New
 terminal** beside the real local machine and type directly into the terminal.
 Use the tab bar to switch shells or open another, and its hangup action to close
-one explicitly. Reopening a sidebar terminal attaches to its existing process.
+one explicitly. Reopening a sidebar terminal attaches to its existing process. A
+Session's terminal button opens its bottom panel with shells in that Session's
+Worktree.
 
 `mise run check` covers native PTY behavior, daemon lifetime and flow control,
 signaling ownership, and renderer input/output. `mise run desktop:smoke-terminal`

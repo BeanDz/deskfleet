@@ -136,8 +136,9 @@ async function exerciseCatalog(context: CatalogSmokeContext): Promise<CatalogSmo
   require(document.querySelector("main")!.innerText.includes("No sessions yet."), "New workspaces must show an empty session list")
   await click("New session")
   await until(() => location.hash === "#/", "Workspace new session navigation")
-  const targets = [...document.querySelectorAll(".ui-chip")].map(chip => chip.textContent?.trim())
-  require(targets.length === 3 && targets.includes(created.name) && targets.includes("Codex"), "The composer must target the selected workspace and provider without an existing worktree")
+  const targets = [...document.querySelectorAll("[data-composer-context]")].map(chip => chip.textContent?.trim())
+  // Machine, Workspace, the choice of a new Session context, and the provider.
+  require(targets.length === 4 && targets.includes(created.name) && targets.includes("New worktree") && targets.includes("Codex"), "The composer must target the selected workspace and provider without an existing worktree")
   require(document.querySelector('aside[aria-label="Details"]')!.textContent?.includes(context.checkoutPath), "Composer details must show the workspace's configured directories")
   const workspaceLink = [...document.querySelectorAll("a")].find(element => element.textContent?.trim() === created.name)
   require(workspaceLink, "Created workspace must remain available in the sidebar")

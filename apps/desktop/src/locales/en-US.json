@@ -101,11 +101,12 @@
     "disconnected": "Disconnected. The terminal keeps running on its machine.",
     "reconnect": "Reconnect",
     "interrupted": "Shell interrupted. Saved history is available until hangup.",
-    "moreHistory": "Load more history",
-    "historyLines": "Scrollback: {count} lines",
-    "historyRetained": "Complete history is saved on the machine until this shell is hung up.",
     "ended": "Process ended",
-    "exited": "Process exited ({code})"
+    "exited": "Process exited ({code})",
+    "sessionPanel": "Session terminals",
+    "resizePanel": "Resize terminal panel",
+    "showPanel": "Show terminal",
+    "hidePanel": "Hide terminal"
   },
   "desktop": {
     "notFound": "This machine does not exist.",

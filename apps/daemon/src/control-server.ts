@@ -178,7 +178,14 @@ class ControlConnection {
       case "terminalList":
         return this.#terminals.list()
       case "terminalDial": {
-        const terminal = await this.#terminals.dial(request.params)
+        let params = request.params
+        if (params.mode === "create" && params.worktreeId !== undefined) {
+          const { worktreeId } = params
+          const worktree = (await this.#catalog.native.snapshot()).workspaces.flatMap(workspace => workspace.worktrees).find(value => value.id === worktreeId)
+          if (!worktree?.sessionId || !worktree.directories[0]) throw new Error("Session worktree is unavailable")
+          params = { ...params, cwd: params.cwd ?? worktree.directories[0].path }
+        }
+        const terminal = await this.#terminals.dial(params)
         this.#dialed.add(terminal.id)
         return terminal
       }
@@ -401,6 +408,8 @@ export async function startControlServer(peers: ControlPeers, directory: string,
     // Recover only after owning discovery: a second daemon must never rewrite
     // the active daemon's terminal metadata while probing its endpoint.
     await catalog.init()
+    // A Session's terminals end before its Worktree is removed.
+    catalog.onSessionRelease(worktreeId => sessions.hangupOwned(worktreeId))
     agents = new AgentSessions(catalog, catalog.native, agentProvider)
     await agents.init()
     await sessions.init()

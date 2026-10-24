@@ -63,8 +63,9 @@ catalog and show an error.
 The footer identifies this as local mode, without account or organization
 membership. Database Machine IDs remain distinct from the `local-daemon`
 connection target. The desktop route supports live WebRTC playback; **New
-terminal** opens a native PTY, and **Open terminal here** on a worktree directory
-starts one at that path. Those terminals retain machine scope. The application
+terminal** opens a native PTY, and **Open terminal here** on a Workspace directory
+starts one at that path with machine scope. On a Session's Worktree page it opens
+a Session shell in that Session's bottom panel instead. The application
 does not display sample machines as live resources.
 
 Accounts, organization switching, remote machine registration, target/provider
@@ -82,8 +83,8 @@ rightmost header reserves with `.titlebar-overlay-inset`
 (`src/main/window-chrome.ts`).
 
 The tree follows the resource model: machines contain workspaces, and workspaces
-list their Sessions. Each Session exposes its associated Worktree. Terminal sessions
-appear under whichever machine, workspace, or worktree owns them. Machines with a
+list their Sessions. Each Session exposes its associated Worktree. Machine terminals
+appear under the machine; a Session's terminals stay in its bottom panel. Machines with a
 graphical session list Remote desktop first; headless machines omit it. Offline
 machines start collapsed and report when they were last seen.
 
@@ -93,7 +94,7 @@ machines start collapsed and report when they were last seen.
 | `/workspaces/:workspaceId` | Workspace name, ordered directories, Sessions, default-directory terminal, and deletion |
 | `/worktrees/:worktreeId` | Directory bindings and the owning Session of a session Worktree |
 | `/sessions/:sessionId` | Conversation, tools, permissions, candidate backlog, composer, and agent lifecycle |
-| `/terminals/:terminalId` | A terminal session's owner, cwd, and terminal surface |
+| `/terminals/:terminalId` | A machine terminal's tab; a Session terminal redirects to its Session's panel |
 | `/machines/:machineId/terminals` | Terminal tabs and the empty terminal workspace |
 | `/machines/:machineId/desktop` | A machine's remote desktop surface, or why it is unavailable |
 | `/settings/preferences` | Preferences, including launch at startup and the local Agent under This computer |
@@ -146,7 +147,11 @@ backlog, and Worktree. The next message resumes the saved provider session when
 supported; there is no separate resume control. **Delete session** removes its conversation and any generated
 checkouts; a working-directory Session's files are left in place;
 command audit remains in the daemon database. Navigating away, disconnecting, or
-closing the window leaves the agent running; quitting the app stops it. Restarting the daemon retains history
+closing the window leaves the agent running; quitting the app stops it.
+
+The terminal button in a Session's header opens a resizable bottom panel of
+shells in that Session's Worktree. Its open state and height are remembered per
+device. Leaving the Session detaches these shells; deleting it hangs them up. Restarting the daemon retains history
 and marks interrupted runs; the next message resumes them.
 
 `useAgentSessionsStore` subscribes to snapshots and replays the committed event
@@ -160,8 +165,8 @@ submission is confirmed. `AgentClient` carries ACP JSON-RPC over the ordered
 
 `TerminalSurface` wraps xterm.js and its fit addon. It fits the terminal to its
 container on resize and disposes of it on unmount. The terminal view remounts it
-for each terminal session. The real local machine lists daemon-owned sessions in
-tabs and supports dialing new or existing shells, live input/output, resize,
+for each terminal session. The real local machine lists its machine-scoped
+sessions in tabs and supports dialing new or existing shells, live input/output, resize,
 reattachment, and explicit hangup. Switching tabs, leaving the view or closing
 the window leaves shells running. Closing a tab hangs up only its shell and removes
 its daemon history. Daemon shutdown terminates processes while preserving their
@@ -172,8 +177,9 @@ loads only with the terminal route's chunk.
 The data-only connection reuses authenticated SDP/ICE signaling without media
 tracks or screen capture. Dial/hangup uses signaling and remains available without
 a data peer. Output is acknowledged after xterm consumes it, and reconnecting
-replays full persisted history. The visible scrollback starts at 5,000 lines;
-**Load more history** increases it without changing the daemon's retention. See
+replays full persisted history. The visible scrollback is 5,000 lines, without
+changing the daemon's retention; it will become a Terminal setting. Tabs show
+the connection as an icon and use the title the running program reports. See
 [terminal integration](../../agents/docs/terminals.md) for the wire contract and
 the remaining cross-machine signaling work.
 

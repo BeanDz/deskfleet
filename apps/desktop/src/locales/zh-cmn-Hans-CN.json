@@ -101,11 +101,12 @@
     "disconnected": "连接已断开，终端仍在目标机器上运行。",
     "reconnect": "重新连接",
     "interrupted": "Shell 已中断，挂断前仍可查看已保存的历史。",
-    "moreHistory": "加载更多历史",
-    "historyLines": "可回看 {count} 行",
-    "historyRetained": "完整历史保存在目标机器上，直到挂断此 Shell。",
     "ended": "进程已结束",
-    "exited": "进程已退出（{code}）"
+    "exited": "进程已退出（{code}）",
+    "sessionPanel": "会话终端",
+    "resizePanel": "调整终端面板高度",
+    "showPanel": "显示终端",
+    "hidePanel": "隐藏终端"
   },
   "desktop": {
     "notFound": "该机器不存在。",

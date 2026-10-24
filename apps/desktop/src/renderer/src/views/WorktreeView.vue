@@ -33,7 +33,7 @@ const available = computed(() => fleet.canManageCatalog && location.value?.machi
       <p v-if="!available" class="m-0 text-sm text-ui-text-muted">{{ t("catalog.offline") }}</p>
       <section>
         <h2 class="ui-section-title">{{ t("worktree.directories") }}</h2>
-        <DirectoryList :directories="location.worktree.directories" :disabled="!available" />
+        <DirectoryList :directories="location.worktree.directories" :disabled="!available" :owner="{ sessionId: location.session.id, worktreeId: location.worktree.id }" />
       </section>
       <section>
         <h2 class="ui-section-title">{{ t("worktree.session") }}</h2>
