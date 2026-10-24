@@ -376,8 +376,14 @@
     "removeEnvironment": "移除第 {n} 个环境变量",
     "invalidEnvironmentKey": "每个变量都需要名称，只能包含字母、数字和下划线，并以字母或下划线开头。",
     "duplicateEnvironmentKey": "环境变量名称不能重复。",
+    "test": "测试",
+    "testing": "正在测试…",
+    "testDescription": "使用这些设置启动 Agent 并打开会话，不发送任何提示词。",
+    "testSucceeded": "连接成功，{agent} 已打开会话。",
+    "testFailed": "测试失败：{error}",
     "templateDescription": {
       "codex": "通过内置 ACP bridge 运行已安装的 Codex CLI。",
+      "claude-code": "通过内置 ACP bridge 运行已安装的 Claude Code CLI。",
       "acp": "运行通过标准输入和输出支持 ACP 的 Agent 可执行文件。"
     },
     "icon": "图标",

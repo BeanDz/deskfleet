@@ -68,6 +68,7 @@ const api: DeskfleetDesktopApi = {
     create: (provider) => invokeDesktop("providerCreate", { provider }),
     update: (providerId, changes) => invokeDesktop("providerUpdate", { providerId, changes }),
     remove: (providerId) => invokeDesktop("providerRemove", { providerId }),
+    test: (provider) => invokeDesktop("providerTest", { provider }),
     onChanged: (listener) => {
       const handler = () => listener()
       ipcRenderer.on(PROVIDERS_CHANGED_EVENT, handler)

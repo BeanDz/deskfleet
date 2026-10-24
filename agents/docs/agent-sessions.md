@@ -46,10 +46,17 @@ A provider has a stable ID, a template, a display name, an optional icon, an
 optional binary path, and environment overrides. Icons are bundled catalog slugs;
 omitting one uses the template's default icon. Icon selection affects display
 only and does not change execution. The Codex template runs the installed Codex CLI
-through the bundled ACP bridge; its default binary is `codex`. The ACP template
+through the bundled ACP bridge; its default binary is `codex`. The Claude Code
+template runs the installed Claude Code CLI through the bundled
+[Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp);
+its default binary is `claude`. The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the
-daemon's inherited environment at process startup. Template selection is
+daemon's inherited environment at process startup. The provider dialog's
+**Test** button sends the unsaved settings to the daemon, which starts the agent,
+initializes ACP, and opens one session in an empty temporary directory without
+sending a prompt, then closes it. The test runs beside other local IPC requests,
+gives up after 30 seconds, and reports the agent's own failure details. Template selection is
 immutable after creation because it determines the launch and configuration
 contract; the name, icon, path, and environment remain editable.
 

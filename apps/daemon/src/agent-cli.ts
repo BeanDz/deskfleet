@@ -1,6 +1,7 @@
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
+import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
 import { DaemonClient } from "./control-client.ts"
 import type { ManagedWorkspaceSession } from "./session-worktrees.ts"
@@ -20,6 +21,11 @@ async function connectWorkspaceSessions(): Promise<AgentWorkspaceSessions> {
   }
 }
 
+const agents: Record<string, { provider: AgentProvider; name: string }> = {
+  codex: { provider: codexProvider, name: "Codex" },
+  "claude-code": { provider: claudeCodeProvider, name: "Claude Code" },
+}
+
 export async function runAgent(args: string[], dependencies: {
   provider?: AgentProvider
   workspaceSessions?: () => Promise<AgentWorkspaceSessions>
@@ -33,18 +39,17 @@ export async function runAgent(args: string[], dependencies: {
       cwd: { type: "string" },
       "workspace-id": { type: "string" },
       prompt: { type: "string" },
-      name: { type: "string", default: "Codex" },
+      name: { type: "string" },
       "binary-path": { type: "string" },
       env: { type: "string", multiple: true, default: [] },
     },
   })
   if (values.help) {
-    console.log("Usage: deskfleet-daemon agent codex [--check | --prompt <text>] [--cwd <directory> | --workspace-id <id>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
+    console.log("Usage: deskfleet-daemon agent <codex|claude-code> [--check | --prompt <text>] [--cwd <directory> | --workspace-id <id>] [--name <name>] [--binary-path <executable>] [--env KEY=value ...]")
     return
   }
-  if (positionals.length !== 1 || positionals[0] !== "codex") {
-    throw new Error("supported agent: codex")
-  }
+  const selected = positionals.length === 1 && Object.hasOwn(agents, positionals[0]!) ? agents[positionals[0]!] : undefined
+  if (!selected) throw new Error(`supported agents: ${Object.keys(agents).join(", ")}`)
   if (values.check ? values.prompt !== undefined : !values.prompt) {
     throw new Error("choose --check or --prompt <text>")
   }
@@ -53,7 +58,7 @@ export async function runAgent(args: string[], dependencies: {
   }
 
   const config: AgentConfig = {
-    name: values.name,
+    name: values.name ?? selected.name,
     binaryPath: values["binary-path"],
     env: Object.fromEntries(values.env.map(value => {
       const separator = value.indexOf("=")
@@ -61,7 +66,7 @@ export async function runAgent(args: string[], dependencies: {
       return [value.slice(0, separator), value.slice(separator + 1)]
     })),
   }
-  const provider = dependencies.provider ?? codexProvider
+  const provider = dependencies.provider ?? selected.provider
   let agent: AgentConnection | undefined
   let workspaceSessions: AgentWorkspaceSessions | undefined
   let managed: ManagedWorkspaceSession | undefined

@@ -136,8 +136,12 @@ try {
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000,
   })
   assert.match(version.stdout, /\b2\.2\.2\b/u)
+  const claudeVersion = await promisify(execFile)(executable, [join(appPath, "out/main/index.js"), "--claude-agent-acp", "--version"], {
+    env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000,
+  })
+  assert.equal(claudeVersion.stdout.trim(), "0.94.0")
   await probeHostedDaemon()
-  console.log("Electron startup smoke passed: client, Codex adapter, and Agent signaling")
+  console.log("Electron startup smoke passed: client, Codex and Claude Code adapters, and Agent signaling")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

@@ -5,6 +5,7 @@ import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import { AgentProviders } from "./agent-providers.ts"
+import { configureAdapterHost } from "./agents/adapter-host.ts"
 import { validateControlParams } from "./control-request.ts"
 import type { AgentProviderSettings } from "./provider-protocol.ts"
 
@@ -98,6 +99,49 @@ test("generic ACP launches the configured binary with added variables and inheri
   await connection.close()
 })
 
+test("Claude Code runs its bundled adapter with the installed CLI and added variables", { timeout: 15_000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-claude-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  configureAdapterHost({ command: process.execPath, args: [fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))] })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const fallback = await registry.create({ template: "claude-code", name: "Claude Code", env: {} })
+  assert.deepEqual(registry.resolve(fallback.id).config, { name: "Claude Code", binaryPath: "claude", env: {} })
+  const configured = await registry.create({
+    template: "claude-code", name: "Work Claude", binaryPath: "/opt/claude",
+    env: { CLAUDE_CODE_EXECUTABLE: "/ignored/claude", DESKFLEET_TEST_VALUE: "work" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  assert.equal(provider.id, "claude-code")
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.deepEqual(connection.initialization._meta?.launch, { args: ["--claude-agent-acp"], claudeCodeExecutable: "/opt/claude" })
+  assert.equal((connection.initialization._meta?.environment as { extra?: string }).extra, "work")
+  await connection.close()
+})
+
+test("provider tests open a prompt-free session from unsaved settings and report the agent's own failure", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-test-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "fixture agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)}\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  let changes = 0
+  registry.onChanged(() => { changes += 1 })
+  assert.deepEqual(await registry.test({ template: "acp", name: "Fixture", binaryPath, env: {} }), { agentName: "deskfleet-test-agent" })
+  await assert.rejects(
+    registry.test({ template: "acp", name: "Fixture", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "session-error" } }),
+    /^Error: fixture cannot open .*df-provider-test-/u,
+  )
+  await assert.rejects(registry.test({ template: "acp", name: "Missing", binaryPath: join(directory, "missing"), env: {} }), /Could not start/u)
+  await assert.rejects(registry.test({ template: "unknown", name: "Agent", env: {} } as never), /Unknown Agent provider template/u)
+  assert.equal(changes, 0)
+  assert.deepEqual(registry.snapshot().providers.map(provider => provider.id), ["codex"])
+})
+
 test("invalid provider inputs and template edits are rejected by the IPC boundary", () => {
   assert.throws(() => validateControlParams("providerCreate", { provider: { template: "unknown", name: "Agent", env: {} } }), /Unknown Agent provider template/u)
   assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: " ", env: {} } }), /Provider names/u)
@@ -106,6 +150,8 @@ test("invalid provider inputs and template edits are rejected by the IPC boundar
   assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", env: { TOKEN: 12 } } }), /values must be strings/u)
   assert.throws(() => validateControlParams("providerUpdate", { providerId: "codex", changes: { template: "acp", name: "Agent", env: {} } }), /template is fixed/u)
   assert.throws(() => validateControlParams("providerRemove", { providerId: "../codex" }), /provider ID/u)
+  assert.throws(() => validateControlParams("providerTest", { provider: { template: "unknown", name: "Agent", env: {} } }), /Unknown Agent provider template/u)
+  assert.throws(() => validateControlParams("providerTest", { provider: { template: "acp", name: "Agent", binaryPath: "bad\0path", env: {} } }), /binary path/u)
   for (const icon of ["", "../openai", "https://example.com/icon.svg", "OpenAI", "bad--slug", "a".repeat(81), 12]) {
     assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", icon, env: {} } }), /provider icon/u)
     assert.throws(() => validateControlParams("providerUpdate", { providerId: "codex", changes: { name: "Agent", icon, env: {} } }), /provider icon/u)

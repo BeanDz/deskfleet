@@ -4,11 +4,11 @@ import { nativeInfo } from "@deskfleet/native"
 import { startDaemon } from "./daemon.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
 import { runAgent } from "./agent-cli.ts"
-import { CODEX_ACP_ARGUMENT, configureCodexAdapterHost, runCodexAdapter } from "./agents/codex.ts"
+import { bundledAdapter, configureAdapterHost } from "./agents/adapters.ts"
 
-configureCodexAdapterHost({
+configureAdapterHost({
   command: process.execPath,
-  args: isSea() ? [CODEX_ACP_ARGUMENT] : [process.argv[1]!, CODEX_ACP_ARGUMENT],
+  args: isSea() ? [] : [process.argv[1]!],
 })
 
 function fail(error: unknown) {
@@ -17,8 +17,9 @@ function fail(error: unknown) {
 }
 
 async function main() {
-  if (process.argv[2] === CODEX_ACP_ARGUMENT) {
-    await runCodexAdapter()
+  const adapter = bundledAdapter(process.argv.slice(2, 3))
+  if (adapter) {
+    await adapter()
     return
   }
   if (process.argv[2] === "agent") {
@@ -34,7 +35,7 @@ async function main() {
   })
   if (values.help) {
     console.log("Usage: deskfleet-daemon [--port <0-65535>] [--info] [--help]")
-    console.log("       deskfleet-daemon agent codex --help")
+    console.log("       deskfleet-daemon agent <codex|claude-code> --help")
     return
   }
   if (values.info) {

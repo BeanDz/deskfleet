@@ -2,7 +2,7 @@
 import { Plus, Trash2 } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentProviderConfig, AgentProviderInput, AgentProviderTemplate } from "../../../../../../daemon/src/provider-protocol.ts"
+import type { AgentProviderConfig, AgentProviderInput, AgentProviderTemplate, ProviderTestResult } from "../../../../../../daemon/src/provider-protocol.ts"
 import IconButton from "../common/IconButton.vue"
 import ProviderIconPicker from "./ProviderIconPicker.vue"
 
@@ -11,6 +11,7 @@ const props = defineProps<{
   templates: AgentProviderTemplate[]
   disabled?: boolean
   save(provider: AgentProviderInput): Promise<void>
+  test(provider: AgentProviderInput): Promise<ProviderTestResult>
 }>()
 const emit = defineEmits<{ saved: []; cancel: [] }>()
 const { t } = useI18n()
@@ -24,6 +25,9 @@ let nextRowId = 0
 const environment = ref(Object.entries(props.initial?.env ?? {}).map(([key, value]) => ({ id: nextRowId++, key, value })))
 const saving = ref(false)
 const error = ref<string | null>(null)
+const testing = ref(false)
+const testResult = ref<{ ok: true; agentName: string } | { ok: false; error: string } | null>(null)
+let testRevision = 0
 let finished = false
 
 watch(template, (value, previous) => {
@@ -31,6 +35,49 @@ watch(template, (value, previous) => {
     name.value = props.templates.find(item => item.id === value)!.name
   }
 })
+
+// A result describes the settings it tested; any later edit makes it stale.
+// Invalidate synchronously so an edit and a Test click in one tick cannot race.
+watch([template, binaryPath, environment], () => {
+  testRevision += 1
+  testing.value = false
+  testResult.value = null
+}, { deep: true, flush: "sync" })
+
+/** Validates the form and returns the provider it describes, or reports why it cannot. */
+function current(): AgentProviderInput | null {
+  if (!name.value.trim()) { error.value = t("providers.nameRequired"); return null }
+  const keys = environment.value.map(row => row.key.trim())
+  if (keys.some(key => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key))) {
+    error.value = t("providers.invalidEnvironmentKey"); return null
+  }
+  if (new Set(keys).size !== keys.length) { error.value = t("providers.duplicateEnvironmentKey"); return null }
+  return {
+    template: template.value,
+    name: name.value.trim(),
+    binaryPath: binaryPath.value.trim() || undefined,
+    icon: icon.value,
+    env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
+  }
+}
+
+async function runTest(): Promise<void> {
+  if (testing.value || saving.value || props.disabled) return
+  error.value = null
+  const provider = current()
+  if (!provider) return
+  const revision = ++testRevision
+  testing.value = true
+  testResult.value = null
+  try {
+    const result = await props.test(provider)
+    if (revision === testRevision) testResult.value = { ok: true, agentName: result.agentName }
+  } catch (reason) {
+    if (revision === testRevision) testResult.value = { ok: false, error: reason instanceof Error ? reason.message : String(reason) }
+  } finally {
+    if (revision === testRevision) testing.value = false
+  }
+}
 
 function cancel(): void {
   if (saving.value || finished) return
@@ -41,21 +88,11 @@ function cancel(): void {
 async function submit(): Promise<void> {
   if (saving.value || props.disabled) return
   error.value = null
-  if (!name.value.trim()) { error.value = t("providers.nameRequired"); return }
-  const keys = environment.value.map(row => row.key.trim())
-  if (keys.some(key => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key))) {
-    error.value = t("providers.invalidEnvironmentKey"); return
-  }
-  if (new Set(keys).size !== keys.length) { error.value = t("providers.duplicateEnvironmentKey"); return }
+  const provider = current()
+  if (!provider) return
   saving.value = true
   try {
-    await props.save({
-      template: template.value,
-      name: name.value.trim(),
-      binaryPath: binaryPath.value.trim() || undefined,
-      icon: icon.value,
-      env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
-    })
+    await props.save(provider)
     finished = true
     dialog.value?.close()
     emit("saved")
@@ -104,7 +141,11 @@ onBeforeUnmount(() => { finished = true; dialog.value?.close() })
         </div>
       </fieldset>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
+      <p v-if="testing" role="status" class="m-0 text-sm text-ui-text-muted" data-provider-test-result>{{ t("providers.testing") }}</p>
+      <p v-else-if="testResult?.ok" role="status" class="m-0 text-sm text-ui-text-muted" data-provider-test-result>{{ t("providers.testSucceeded", { agent: testResult.agentName }) }}</p>
+      <p v-else-if="testResult" role="alert" class="m-0 whitespace-pre-wrap break-words text-sm text-ui-danger" data-provider-test-result>{{ t("providers.testFailed", { error: testResult.error }) }}</p>
       <div class="mt-1 flex justify-end gap-2">
+        <button type="button" class="catalog-button mr-auto" :title="t('providers.testDescription')" :disabled="testing || saving || disabled" @click="runTest">{{ testing ? t("providers.testing") : t("providers.test") }}</button>
         <button type="button" class="catalog-button" :disabled="saving" @click="cancel">{{ t("catalog.cancel") }}</button>
         <button type="submit" class="catalog-button" :disabled="saving || disabled">{{ saving ? t("catalog.saving") : t(initial ? "catalog.save" : "providers.add") }}</button>
       </div>

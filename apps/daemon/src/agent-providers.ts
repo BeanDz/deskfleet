@@ -1,16 +1,26 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agents/acp.ts"
+import { claudeCodeProvider } from "./agents/claude-code.ts"
 import { codexProvider } from "./agents/codex.ts"
 import {
-  AGENT_PROVIDER_TEMPLATES, providerInput, providerSettings, validateProviderId,
-  type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type ProviderSnapshot,
+  AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
+  type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type ProviderSnapshot, type ProviderTestResult,
 } from "./provider-protocol.ts"
 
 const acpProvider: AgentProvider = {
   id: "acp",
   connect: (config, client) => connectAcpProcess({ command: config.binaryPath || "acp-agent", env: config.env }, client),
+}
+
+/** ACP adapters often put the actual cause in error data behind a generic JSON-RPC message. */
+function testFailure(error: unknown): string {
+  const data = (error as { data?: unknown } | null | undefined)?.data
+  const details = data && typeof data === "object" && "details" in data ? data.details : undefined
+  if (typeof details === "string" && details.trim()) return details.trim()
+  return error instanceof Error ? error.message : String(error)
 }
 
 /** Machine-local launch settings stay outside the synchronized conversation journal. */
@@ -66,10 +76,39 @@ export class AgentProviders {
   }
 
   resolve(id: string): { provider: AgentProvider; config: AgentConfig } {
-    const record = this.get(id)
+    return this.#launch(this.get(id))
+  }
+
+  /**
+   * Starts possibly unsaved settings and opens one session in an empty temporary
+   * directory without sending a prompt, so a check costs no inference.
+   */
+  async test(input: AgentProviderInput): Promise<ProviderTestResult> {
+    const { provider, config } = this.#launch(providerInput(input))
+    const cwd = await mkdtemp(join(tmpdir(), "df-provider-test-"))
+    const connecting = provider.connect(config, { onUpdate() {} })
+    let timer: NodeJS.Timeout | undefined
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${config.name} did not open a session within ${PROVIDER_TEST_TIMEOUT_MS / 1000} seconds`)), PROVIDER_TEST_TIMEOUT_MS)
+    })
+    try {
+      const connection = await Promise.race([connecting, deadline])
+      await Promise.race([connection.newSession({ cwd, mcpServers: [] }), deadline])
+      const agent = connection.initialization.agentInfo
+      return { agentName: agent?.title || agent?.name || config.name }
+    } catch (error) {
+      throw new Error(testFailure(error), { cause: error })
+    } finally {
+      clearTimeout(timer)
+      await connecting.then(connection => connection.close(), () => {})
+      await rm(cwd, { recursive: true, force: true })
+    }
+  }
+
+  #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
     return {
-      provider: record.template === "codex" ? this.#codex : acpProvider,
+      provider: record.template === "codex" ? this.#codex : record.template === "claude-code" ? claudeCodeProvider : acpProvider,
       config: { name: record.name, binaryPath: record.binaryPath ?? template.defaultBinaryPath, env: record.env },
     }
   }

@@ -14,7 +14,7 @@ main process. The Electron client uses Vue.
 
 The current implementation includes resource types, a SeaORM catalog backed by
 SQLite, the server's `GET /healthz`, and an independent daemon with native platform
-information, a local health endpoint, and Codex CLI sessions over ACP. The Electron
+information, a local health endpoint, and Codex CLI and Claude Code sessions over ACP. The Electron
 client manages local Workspace directory configuration through authenticated daemon IPC.
 Each Workspace has an automatic main Worktree; managed Sessions create and destroy
 their own temporary Git worktrees. The client opens terminals in configured
@@ -74,8 +74,8 @@ mise run daemon:smoke
 ```
 
 The executable is `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows).
-It also runs single-turn Codex sessions using the installed Codex CLI and an
-embedded ACP adapter. See the [daemon guide](apps/daemon/README.md) for agent
+It also runs single-turn Codex or Claude Code sessions using the installed CLI and
+an embedded ACP adapter. See the [daemon guide](apps/daemon/README.md) for agent
 configuration, CLI options, and platform support.
 
 ## Desktop app

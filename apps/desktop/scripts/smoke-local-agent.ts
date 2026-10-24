@@ -20,6 +20,7 @@ const profileDirectory = join(directory, "profile")
 const checkoutPath = join(directory, "checkout")
 const rendererDirectory = join(appPath, "out/renderer")
 const preloadPath = join(appPath, "out/preload/index.cjs")
+const mainEntry = join(appPath, "out/main/index.js")
 let electron: ChildProcess | undefined
 let exited: Promise<void> | undefined
 let diagnostics = ""
@@ -33,7 +34,7 @@ async function stopClient(): Promise<void> {
 }
 
 async function launchClient(phase: LocalAgentSmokeContext["phase"], previous?: LocalAgentSmokeResult): Promise<LocalAgentSmokeResult> {
-  const context: LocalAgentSmokeContext = { phase, rendererDirectory, preloadPath, profileDirectory, daemonDirectory, checkoutPath, ...previous }
+  const context: LocalAgentSmokeContext = { phase, rendererDirectory, preloadPath, mainEntry, profileDirectory, daemonDirectory, checkoutPath, ...previous }
   const env: NodeJS.ProcessEnv = { ...process.env, DESKFLEET_DAEMON_DIRECTORY: daemonDirectory }
   delete env.ELECTRON_RUN_AS_NODE
   electron = spawn(executable, [join(directory, "main.mjs"), `--user-data-dir=${profileDirectory}`, `--local-agent-smoke-context=${JSON.stringify(context)}`], {
@@ -66,7 +67,13 @@ async function discoveryExists(): Promise<boolean> {
 
 async function shutdownDaemon(): Promise<void> {
   if (!await discoveryExists()) return
-  const client = await DaemonClient.connect(() => {}, () => {}, daemonDirectory)
+  let client: DaemonClient
+  try { client = await DaemonClient.connect(() => {}, () => {}, daemonDirectory) }
+  catch (error) {
+    // A crashed app leaves stale discovery; cleanup must not mask the failure that caused it.
+    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ECONNREFUSED")) return
+    throw error
+  }
   try { await client.call("shutdown", {}) }
   finally { client.close() }
   const deadline = Date.now() + 15_000
@@ -77,7 +84,7 @@ async function shutdownDaemon(): Promise<void> {
 }
 
 try {
-  await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath)])
+  await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath), stat(mainEntry)])
   await Promise.all([mkdir(checkoutPath), mkdir(profileDirectory)])
   await Promise.all([
     build({ entryPoints: [join(import.meta.dirname, "fixtures/local-agent-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" }),
@@ -105,7 +112,7 @@ try {
     try { assert.equal((await observer.call("catalogList", {})).workspaces[0]?.id, created.workspaceId, "Quitting the app must leave a separate daemon running") }
     finally { observer.close() }
   } finally { await external.close() }
-  console.log("Production Electron local Agent: provider creation/editing/removal, icon selection and restart persistence, startup permission denial, Settings off/on, catalog refresh, terminal interruption, window-independent and app-bound lifetime, standalone daemon reuse, and disabled startup passed")
+  console.log("Production Electron local Agent: provider creation/editing/removal, a failed provider test, icon selection and restart persistence, startup permission denial, Settings off/on, catalog refresh, terminal interruption, window-independent and app-bound lifetime, standalone daemon reuse, and disabled startup passed")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   const log = await readFile(join(daemonDirectory, "daemon.log"), "utf8").catch(() => "")

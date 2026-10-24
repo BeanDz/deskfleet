@@ -130,8 +130,8 @@ describes its target Workspace.
 ## Agent sessions
 
 Settings → Agents manages the machine's configured providers, including their
-names, icons, executable paths, and environment overrides. The Codex template
-uses the installed and authenticated Codex CLI through the bundled ACP adapter;
+names, icons, executable paths, and environment overrides. The Codex and Claude
+Code templates use their installed and authenticated CLIs through bundled ACP adapters;
 the ACP template runs a configured ACP executable directly. **New session**
 creates a persistent Session for the selected Workspace and provider, then submits the prompt.
 The composer's context menu chooses **New worktree**, isolated Git checkouts from
@@ -343,8 +343,9 @@ mise run desktop:package      # dmg and zip, NSIS, or AppImage for the host plat
 to the main bundle and unpacked from ASAR for loading; installer builds use the
 release addon. The app has no runtime `node_modules` or external Node dependency.
 The app's main process hosts the daemon. The same installed executable runs the
-bundled Codex ACP adapter with `--codex-acp` in Electron's Node mode.
-The `RunAsNode` fuse stays enabled for that adapter process. Packages enable ASAR
+bundled Codex and Claude Code ACP adapters with `--codex-acp` and
+`--claude-agent-acp` in Electron's Node mode. The `RunAsNode` fuse stays enabled
+for those adapter processes. Packages enable ASAR
 integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
@@ -386,8 +387,8 @@ checks streaming, shared backlog steering, permission decisions, leaving and
 returning to the session, live staged/unstaged/untracked diff previews, and history
 recovery after restarting both daemon and client. It edits a file while its diff
 is open to verify live updates independent of provider events. The startup smoke
-checks entry-point routing and initializes the bundled
-Codex adapter without paid inference.
+checks entry-point routing and starts the bundled
+Codex and Claude Code adapters without paid inference.
 
 vue-tsc uses the TypeScript compiler API, which TypeScript 7 does not provide. The
 package therefore installs TypeScript 6 under the `typescript` name. The root

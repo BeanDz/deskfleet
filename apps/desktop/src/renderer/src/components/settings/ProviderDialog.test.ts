@@ -5,9 +5,9 @@ import { i18n } from "../../i18n/index.ts"
 import ProviderDialog from "./ProviderDialog.vue"
 
 let wrapper: VueWrapper | undefined
-function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig) {
-  wrapper = mount(ProviderDialog, { props: { save, initial, templates: [...AGENT_PROVIDER_TEMPLATES] }, global: { plugins: [i18n] } })
-  return { view: wrapper, save }
+function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig, test = vi.fn().mockResolvedValue({ agentName: "Claude Agent" })) {
+  wrapper = mount(ProviderDialog, { props: { save, test, initial, templates: [...AGENT_PROVIDER_TEMPLATES] }, global: { plugins: [i18n] } })
+  return { view: wrapper, save, test }
 }
 const button = (view: VueWrapper, text: string) => view.findAll("button").find(value => value.text() === text)!
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; i18n.global.locale.value = "en-US" })
@@ -30,6 +30,76 @@ test("chooses a template, leaves the binary default implicit, and preserves envi
   expect(save).toHaveBeenCalledExactlyOnceWith({ template: "acp", name: "My agent", binaryPath: undefined, icon: "deepseek", env: { API_TOKEN: "  value=one  " } })
   expect(view.emitted("saved")).toEqual([[]])
   expect(view.emitted("cancel")).toBeUndefined()
+})
+
+test("the Claude Code template defaults to the installed claude CLI and its mark", async () => {
+  const { view, save } = render()
+  await view.get("select").setValue("claude-code")
+  expect((view.get('[name="provider-name"]').element as HTMLInputElement).value).toBe("Claude Code")
+  expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe("claude")
+  expect(view.text()).toContain("Runs the installed Claude Code CLI through the built-in ACP bridge.")
+  expect(view.get("[data-provider-icon]").attributes("data-provider-icon")).toBe("claudecode")
+  await view.get("form").trigger("submit")
+  await flushPromises()
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "claude-code", name: "Claude Code", binaryPath: undefined, icon: undefined, env: {} })
+})
+
+test("tests the unsaved settings without saving and clears a result once launch settings change", async () => {
+  let finish: (result: { agentName: string }) => void = () => {}
+  const { view, save, test } = render(undefined, undefined, vi.fn(() => new Promise(resolve => { finish = resolve })))
+  await view.get("select").setValue("claude-code")
+  await view.get('[name="provider-binary"]').setValue(" /opt/claude ")
+  await button(view, "Test").trigger("click")
+  expect(button(view, "Testing…").attributes("disabled")).toBeDefined()
+  expect(view.get("[data-provider-test-result]").attributes("role")).toBe("status")
+  finish({ agentName: "Claude Agent" })
+  await flushPromises()
+  expect(test).toHaveBeenCalledExactlyOnceWith({ template: "claude-code", name: "Claude Code", binaryPath: "/opt/claude", icon: undefined, env: {} })
+  expect(save).not.toHaveBeenCalled()
+  expect(view.get("[data-provider-test-result]").text()).toBe("Connected. Claude Agent started a session.")
+  await view.get('[name="provider-name"]').setValue("Renamed")
+  expect(view.find("[data-provider-test-result]").exists()).toBe(true)
+  await view.get('[name="provider-binary"]').setValue("/opt/other")
+  expect(view.find("[data-provider-test-result]").exists()).toBe(false)
+  expect(view.emitted("saved")).toBeUndefined()
+})
+
+test("shows the daemon's failure and ignores a result from settings edited during the test", async () => {
+  let finish: (error: Error) => void = () => {}
+  const test = vi.fn()
+    .mockRejectedValueOnce(new Error("Claude Code native binary not found at /missing"))
+    .mockImplementationOnce(() => new Promise((_, reject) => { finish = reject }))
+  const { view } = render(undefined, undefined, test)
+  await button(view, "Test").trigger("click")
+  await flushPromises()
+  const failure = view.get("[data-provider-test-result]")
+  expect(failure.attributes("role")).toBe("alert")
+  expect(failure.text()).toBe("Test failed: Claude Code native binary not found at /missing")
+  await button(view, "Test").trigger("click")
+  await view.get('[name="provider-binary"]').setValue("/opt/codex")
+  finish(new Error("stale failure"))
+  await flushPromises()
+  expect(view.find("[data-provider-test-result]").exists()).toBe(false)
+  expect(button(view, "Test").attributes("disabled")).toBeUndefined()
+})
+
+test("an edit made in the same tick as Test is part of the tested settings", async () => {
+  const { view, test } = render()
+  const binary = view.get('[name="provider-binary"]').element as HTMLInputElement
+  binary.value = "/opt/codex"
+  binary.dispatchEvent(new Event("input"))
+  ;(button(view, "Test").element as HTMLButtonElement).click()
+  await flushPromises()
+  expect(test).toHaveBeenCalledWith(expect.objectContaining({ binaryPath: "/opt/codex" }))
+  expect(view.get("[data-provider-test-result]").text()).toBe("Connected. Claude Agent started a session.")
+})
+
+test("validates the form before testing", async () => {
+  const { view, test } = render()
+  await view.get('[name="provider-name"]').setValue(" ")
+  await button(view, "Test").trigger("click")
+  expect(view.get('[role="alert"]').text()).toBe("Enter a provider name.")
+  expect(test).not.toHaveBeenCalled()
 })
 
 test("keeps the template immutable when editing and supports removing variables", async () => {

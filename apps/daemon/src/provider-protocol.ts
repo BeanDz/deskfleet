@@ -1,4 +1,4 @@
-export type AgentProviderTemplateId = "codex" | "acp"
+export type AgentProviderTemplateId = "codex" | "claude-code" | "acp"
 
 export interface AgentProviderTemplate {
   id: AgentProviderTemplateId
@@ -27,17 +27,27 @@ export interface ProviderSnapshot {
   providers: AgentProviderConfig[]
 }
 
+export interface ProviderTestResult {
+  /** The ACP agent's reported title or name; bundled bridges report themselves. */
+  agentName: string
+}
+
+/** Bounds a provider test below the local control client's request timeout. */
+export const PROVIDER_TEST_TIMEOUT_MS = 30_000
+
 export interface ProviderMethods {
   providerList: { params: Record<string, never>; result: ProviderSnapshot }
   providerCreate: { params: { provider: AgentProviderInput }; result: AgentProviderConfig }
   providerUpdate: { params: { providerId: string; changes: AgentProviderSettings }; result: AgentProviderConfig }
   providerRemove: { params: { providerId: string }; result: null }
+  providerTest: { params: { provider: AgentProviderInput }; result: ProviderTestResult }
 }
 
 export type ProviderEvent = { kind: "providersChanged" }
 
 export const AGENT_PROVIDER_TEMPLATES: readonly AgentProviderTemplate[] = [
   { id: "codex", name: "Codex", defaultBinaryPath: "codex" },
+  { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" },
   { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" },
 ]
 
@@ -81,12 +91,13 @@ export function providerSettings(value: unknown): AgentProviderSettings {
 
 export function providerInput(value: unknown): AgentProviderInput {
   const { template, ...settings } = object(value)
-  if (template !== "codex" && template !== "acp") throw new Error("Unknown Agent provider template")
-  return { ...providerSettings(settings), template }
+  const known = AGENT_PROVIDER_TEMPLATES.find(known => known.id === template)
+  if (!known) throw new Error("Unknown Agent provider template")
+  return { ...providerSettings(settings), template: known.id }
 }
 
 export function validateProviderParams(method: keyof ProviderMethods, params: Record<string, unknown>): void {
   if (method === "providerUpdate" || method === "providerRemove") validateProviderId(params.providerId)
-  if (method === "providerCreate") providerInput(params.provider)
+  if (method === "providerCreate" || method === "providerTest") providerInput(params.provider)
   if (method === "providerUpdate") providerSettings(params.changes)
 }

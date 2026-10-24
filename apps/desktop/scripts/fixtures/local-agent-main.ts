@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { startDaemon } from "@deskfleet/daemon"
+import { configureAdapterHost } from "@deskfleet/daemon/adapters"
 import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { readDaemonDiscovery } from "@deskfleet/daemon/control-discovery"
 import { attachDesktopMedia, installDesktopMediaIpc } from "../../src/main/desktop-media.ts"
@@ -18,6 +19,8 @@ export interface LocalAgentSmokeContext {
   phase: "start" | "restart" | "disabled" | "external"
   rendererDirectory: string
   preloadPath: string
+  /** The built app entry, which routes bundled ACP adapter arguments. */
+  mainEntry: string
   profileDirectory: string
   daemonDirectory: string
   checkoutPath: string
@@ -142,6 +145,10 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
     await chooseProviderIcon(dialog, "claude")
     input('[name="provider-name"]', "Work Codex updated")
     input('[name="provider-binary"]', `${context.checkoutPath}/custom-codex`)
+    // The bundled Codex adapter starts in Electron's Node mode and reports the missing CLI.
+    button("Test", dialog).click()
+    await until(() => dialog.querySelector('[data-provider-test-result][role="alert"]')?.textContent?.includes("custom-codex") ?? false, "Failed provider test")
+    require((await api.providers.list()).providers.find(provider => provider.id === created.id)?.binaryPath === undefined, "Testing a provider must not save its settings")
     input('[data-environment-row] input:nth-child(2)', "updated")
     await saveProvider(dialog)
     const edited = (await api.providers.list()).providers.find(provider => provider.id === created.id)
@@ -236,6 +243,8 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
 const argument = process.argv.find(value => value.startsWith("--local-agent-smoke-context="))
 if (!argument) throw new Error("Missing local Agent smoke context")
 const context = JSON.parse(argument.slice("--local-agent-smoke-context=".length)) as LocalAgentSmokeContext
+// Start adapters as the packaged app does: this executable in Node mode, routed by the real entry.
+configureAdapterHost({ command: process.execPath, args: [context.mainEntry], env: { ELECTRON_RUN_AS_NODE: "1" } })
 app.setPath("userData", context.profileDirectory)
 app.setPath("sessionData", context.profileDirectory)
 registerRendererScheme()

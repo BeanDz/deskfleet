@@ -3,8 +3,8 @@
 `@deskfleet/daemon` is a TypeScript library. It runs as a standalone SEA process
 on headless machines or inside the desktop app's main process. It reports
 native platform information, serves a loopback health
-endpoint, owns a persistent workspace/worktree catalog, and runs Codex CLI
-sessions over ACP.
+endpoint, owns a persistent workspace/worktree catalog, and runs Codex CLI and
+Claude Code sessions over ACP.
 
 Its programmatic `PeerSessions` API owns native WebRTC peers and optional desktop
 streams; daemon shutdown closes these sessions. The CLI exposes authenticated
@@ -117,12 +117,14 @@ remain usable in the main context; isolated Sessions require Git-backed paths.
 the daemon. Local IDs belong to this database; future enrollment/synchronization
 must not merge them with independent databases by integer equality.
 
-## Codex through ACP
+## Agents through ACP
 
 The daemon uses the [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp)
-to connect the installed Codex CLI to ACP. The adapter is a pinned pnpm dependency
-and ships inside the SEA executable. Install and authenticate Codex CLI before
-sending prompts; the daemon uses that CLI's credentials.
+to connect the installed Codex CLI to ACP, and the
+[Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp)
+to connect the installed Claude Code CLI. Both adapters are pinned pnpm
+dependencies and ship inside the SEA executable. Install and authenticate the
+CLI before sending prompts; the daemon uses that CLI's credentials.
 
 The desktop **New session** flow creates a persistent Session and its isolated
 Git Worktree. Its conversation, queued inputs, runs, approval decisions, and
@@ -130,7 +132,7 @@ command audit are stored in the same SQLite catalog. Closing a client leaves
 execution running; reopening replays the journal over the `deskfleet-acp`
 DataChannel. The composer can queue a message or steer the current turn, and a
 pending candidate can also be selected for steering. Stop retains the backlog;
-the next message, or an explicit `session/resume`, reuses the saved Codex
+the next message, or an explicit `session/resume`, reuses the saved provider
 conversation. Explicit deletion removes the owned
 checkouts and history while retaining command audit.
 
@@ -151,6 +153,7 @@ mise exec -- node apps/daemon/src/main.ts agent codex --check
 mise exec -- node apps/daemon/src/main.ts agent codex --cwd /path/to/repository --prompt 'Explain this repository'
 # With the daemon running and a Git-backed Workspace already configured:
 mise exec -- node apps/daemon/src/main.ts agent codex --workspace-id 1 --prompt 'Explain this repository'
+mise exec -- node apps/daemon/src/main.ts agent claude-code --check
 ```
 
 `--check` initializes ACP and exits without creating a session or sending a
@@ -162,11 +165,13 @@ Agent configuration uses these common options:
 
 | Option | Meaning |
 | --- | --- |
-| `--name <label>` | User-facing label, defaulting to `Codex`, separate from the `codex` provider ID |
-| `--binary-path <executable>` | Codex CLI executable; omitted or empty uses `codex` on PATH |
+| `--name <label>` | User-facing label, defaulting to `Codex` or `Claude Code`, separate from the provider ID |
+| `--binary-path <executable>` | CLI executable; omitted or empty uses `codex` or `claude` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
-The selected binary path takes precedence over `CODEX_PATH` in the environment.
+The selected binary path takes precedence over `CODEX_PATH` or
+`CLAUDE_CODE_EXECUTABLE` in the environment, so the Claude adapter never falls
+back to the SDK's optional bundled binary.
 `--cwd` sets an unmanaged ACP session's working directory and defaults to the
 current directory. `--workspace-id` instead allocates a managed Session through
 the running daemon; these flags are mutually exclusive. It uses the generated
@@ -186,12 +191,14 @@ daemon to start and track the next prompt. See the
 for capability negotiation and delivery semantics. Remove the patch when the
 pinned adapter provides that contract upstream.
 
-Source and SEA launches route adapter subprocesses through `--codex-acp` on their
-own entry point. The Electron daemon configures its bundled main entry as the
+Source and SEA launches route adapter subprocesses through `--codex-acp` or
+`--claude-agent-acp` on their own entry point. The Claude adapter's published
+entry uses top-level await, which the CommonJS SEA bundle cannot contain, so
+`--claude-agent-acp` starts its exported stdio server directly. The Electron daemon configures its bundled main entry as the
 adapter host and starts it with `ELECTRON_RUN_AS_NODE=1`, including from ASAR.
 That entry routes to the bundled adapter before loading Electron UI or daemon
-lifecycle code. Adapter processes use the same installed Codex binary selection
-and can terminate naturally when their ACP input closes.
+lifecycle code. Adapter processes use the same installed binary selection and
+can terminate naturally when their ACP input closes.
 
 The packaged executable accepts the same arguments:
 

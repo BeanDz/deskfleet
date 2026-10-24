@@ -247,15 +247,18 @@ stop existing processes or delete their history; a removed provider cannot
 start again. Provider launch settings remain outside the Session journal.
 
 The Codex template connects Codex CLI through the bundled
-[Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The shared
+[Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The Claude
+Code template connects Claude Code CLI through the bundled
+[Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp).
+The shared
 `AgentProvider` interface accepts a user-facing name, an optional binary path,
 and environment overrides. Provider-specific code selects the process; the
 [ACP TypeScript SDK](https://agentclientprotocol.com/libraries/typescript) handles
 initialization, session creation, prompts, cancellation, and session updates.
-Codex uses the installed CLI and its credentials. The adapter runs as a child
-process; the SEA executable reuses its bundled Node runtime.
+Each bundled adapter uses the installed CLI and its credentials. Adapters run as
+child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
-paths use the template default (`codex` or `acp-agent`), and configured environment
+paths use the template default (`codex`, `claude`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with a default Codex provider; the new-session composer chooses among the
 machine's configured providers. See [Agent Sessions](agent-sessions.md) for
@@ -273,7 +276,7 @@ The CLI cancels them explicitly. The client advertises no filesystem or terminal
 capabilities.
 
 ACP capability negotiation determines which operations an adapter supports.
-Claude Code, Pi, and Cursor CLI are further integration candidates. Managed
+Pi and Cursor CLI are further integration candidates. Managed
 sessions, imported history, resumed sessions, and attachment to an existing CLI
 process are distinct capabilities. ACP alone does not guarantee live attachment;
 a tmux connection can expose the CLI without providing structured ACP control.

@@ -3,7 +3,7 @@ import { Bot, Ellipsis, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { onClickOutside } from "@vueuse/core"
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentProviderConfig, AgentProviderInput, ProviderSnapshot } from "../../../../../../daemon/src/provider-protocol.ts"
+import type { AgentProviderConfig, AgentProviderInput, ProviderSnapshot, ProviderTestResult } from "../../../../../../daemon/src/provider-protocol.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
@@ -56,6 +56,9 @@ async function save(provider: AgentProviderInput): Promise<void> {
     await window.deskfleet.providers.update(initial.id, { name, binaryPath, env, icon })
   } else await window.deskfleet.providers.create(provider)
   await refresh()
+}
+function test(provider: AgentProviderInput): Promise<ProviderTestResult> {
+  return window.deskfleet.providers.test(provider)
 }
 async function askRemove(provider: AgentProviderConfig): Promise<void> {
   openMenu.value = null
@@ -132,7 +135,7 @@ async function remove(): Promise<void> {
       </div>
     </template>
   </div>
-  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :disabled="!available" :save="save" @saved="editor = null" @cancel="editor = null" />
+  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :disabled="!available" :save="save" :test="test" @saved="editor = null" @cancel="editor = null" />
   <dialog ref="removeDialog" class="ui-dialog app-no-drag w-[26rem]" aria-labelledby="provider-remove-title" @cancel.prevent="cancelRemove" @close="cancelRemove">
     <h2 id="provider-remove-title" class="m-0 mb-2 text-base font-semibold">{{ t("providers.removeQuestion", { name: removing?.name ?? '' }) }}</h2>
     <p class="m-0 mb-4 text-sm text-ui-text-muted">{{ t("providers.removeDescription") }}</p>

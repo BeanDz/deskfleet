@@ -46,12 +46,14 @@ test("provider settings are validated and changes reach only their event stream"
     ["providerCreate", { provider }],
     ["providerUpdate", { providerId: "codex", changes }],
     ["providerRemove", { providerId: "codex" }],
+    ["providerTest", { provider }],
   ] as const) {
     await controller.invoke(method, params)
     expect(client.call).toHaveBeenLastCalledWith(method, params)
   }
   await expect(controller.invoke("providerUpdate", { providerId: "codex", changes: { ...changes, template: "acp" } })).rejects.toThrow()
-  expect(client.call).toHaveBeenCalledTimes(4)
+  await expect(controller.invoke("providerTest", { provider: { ...provider, template: "unknown" } })).rejects.toThrow()
+  expect(client.call).toHaveBeenCalledTimes(5)
   event({ kind: "providersChanged" })
   expect(emitProviders).toHaveBeenCalledOnce()
   expect(emit).not.toHaveBeenCalled()

@@ -27,11 +27,13 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
           LANG: process.env.LANG,
           extra: process.env.DESKFLEET_TEST_VALUE,
         },
+        launch: { args: process.argv.slice(2), claudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE },
       },
     }
   })
   .onRequest(acp.methods.agent.session.new, async ({ params }) => {
     if (mode === "wait-session") await new Promise(() => {})
+    if (mode === "session-error") throw acp.RequestError.internalError({ details: `fixture cannot open ${params.cwd}` })
     return { sessionId: `fixture-session-${++nextSession}`, _meta: { request: params } }
   })
   .onRequest(acp.methods.agent.session.setConfigOption, ({ params }) => ({

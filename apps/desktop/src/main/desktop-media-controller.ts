@@ -41,6 +41,7 @@ export class DesktopMediaController {
       case "providerCreate":
       case "providerUpdate":
       case "providerRemove":
+      case "providerTest":
       case "directoryList":
       case "workspaceCreate":
       case "workspaceUpdate":

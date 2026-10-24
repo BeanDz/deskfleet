@@ -121,6 +121,14 @@ class ControlConnection {
           pending = pending.subarray(end + 1)
           try {
             const request = parseControlRequest(value)
+            if (request.method === "providerTest" && this.#authenticated) {
+              // A test can take seconds; keep this connection's other requests responsive.
+              void this.#handle(request).then(
+                result => this.#send({ id: request.id, result }),
+                error => this.#send({ id: request.id, error: message(error) }),
+              )
+              continue
+            }
             const result = await this.#handle(request)
             if (request.method === "shutdown") {
               // Flush the acknowledgement before shutdown closes client sockets.
@@ -172,6 +180,8 @@ class ControlConnection {
       case "providerRemove":
         await this.#providers.remove(request.params.providerId)
         return null
+      case "providerTest":
+        return this.#providers.test(request.params.provider)
       case "shutdown":
         if (!this.#onShutdownRequested) throw new Error("Daemon shutdown is unavailable")
         return null

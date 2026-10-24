@@ -6,12 +6,13 @@ const api: DeskfleetDesktopApi = {
   locale: "en-US",
   providers: {
     list: async () => ({
-      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
+      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
       providers: [{ id: "codex", template: "codex", name: "Codex", env: {} }],
     }),
     create: async () => { throw new Error("Daemon unavailable") },
     update: async () => { throw new Error("Daemon unavailable") },
     remove: async () => { throw new Error("Daemon unavailable") },
+    test: async () => { throw new Error("Daemon unavailable") },
     onChanged: () => () => {},
   },
   agent: {

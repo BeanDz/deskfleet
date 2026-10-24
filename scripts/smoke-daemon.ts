@@ -43,6 +43,10 @@ try {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
   assert.equal(adapterVersion, `@agentclientprotocol/codex-acp ${manifest.dependencies["@agentclientprotocol/codex-acp"]}`)
+  const claudeAdapterVersion = execFileSync(command, ["--claude-agent-acp", "--version"], {
+    cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+  }).trim()
+  assert.equal(claudeAdapterVersion, manifest.dependencies["@agentclientprotocol/claude-agent-acp"])
 
   const child = spawn(command, ["--port", "0"], {
     cwd: directory, env: environment, stdio: ["ignore", "pipe", "pipe"],

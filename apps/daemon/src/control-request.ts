@@ -26,6 +26,7 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
     case "providerCreate":
     case "providerUpdate":
     case "providerRemove":
+    case "providerTest":
       validateProviderParams(method, params)
       break
     case "directoryList":

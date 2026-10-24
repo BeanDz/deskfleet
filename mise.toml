@@ -121,7 +121,7 @@ depends = ["native:debug", "desktop:build"]
 run = "node apps/desktop/scripts/smoke-agent.ts"
 
 [tasks."desktop:smoke-startup"]
-description = "Verify the actual Electron package entry and bundled Codex adapter startup"
+description = "Verify the actual Electron package entry and bundled ACP adapter startup"
 depends = ["desktop:build"]
 run = "node apps/desktop/scripts/smoke-startup.ts"
 

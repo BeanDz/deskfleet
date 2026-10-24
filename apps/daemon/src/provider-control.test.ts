@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -26,6 +26,17 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   const updated = await client.call("providerUpdate", { providerId: created.id, changes: { name: "Work", binaryPath: "/usr/local/bin/acp", env: { MODE: "work" } } })
   assert.equal(updated.template, "acp")
   assert.deepEqual((await observer.call("providerList", {})).providers.find(provider => provider.id === created.id), updated)
+  if (process.platform !== "win32") {
+    // A slow test runs beside other requests on the same connection.
+    const silent = join(directory, "silent-agent")
+    await writeFile(silent, "#!/bin/sh\nsleep 2\n", { mode: 0o700 })
+    let settled = false
+    const testing = client.call("providerTest", { provider: { template: "acp", name: "Silent", binaryPath: silent, env: {} } })
+      .finally(() => { settled = true })
+    assert.equal((await client.call("providerList", {})).providers.length, 2)
+    assert.equal(settled, false)
+    await assert.rejects(testing, /closed|exited/u)
+  }
   await client.call("providerRemove", { providerId: "codex" })
   clients.forEach(connection => connection.close())
   await daemon.close()

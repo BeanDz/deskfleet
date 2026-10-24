@@ -376,8 +376,14 @@
     "removeEnvironment": "Remove environment variable {n}",
     "invalidEnvironmentKey": "Each variable needs a name containing only letters, digits, and underscores, starting with a letter or underscore.",
     "duplicateEnvironmentKey": "Environment variable names must be unique.",
+    "test": "Test",
+    "testing": "Testing…",
+    "testDescription": "Start the agent with these settings and open a session without sending a prompt.",
+    "testSucceeded": "Connected. {agent} started a session.",
+    "testFailed": "Test failed: {error}",
     "templateDescription": {
       "codex": "Runs the installed Codex CLI through the built-in ACP bridge.",
+      "claude-code": "Runs the installed Claude Code CLI through the built-in ACP bridge.",
       "acp": "Runs an agent executable that supports ACP over standard input and output."
     },
     "icon": "Icon",

@@ -6,12 +6,13 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
-    "./codex": "./src/agents/codex.ts",
+    "./adapters": "./src/agents/adapters.ts",
     "./control-client": "./src/control-client.ts",
     "./control-discovery": "./src/control-discovery.ts",
     "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.94.0",
     "@agentclientprotocol/codex-acp": "2.2.2",
     "@agentclientprotocol/sdk": "2.0.1",
     "@deskfleet/native": "workspace:*"
