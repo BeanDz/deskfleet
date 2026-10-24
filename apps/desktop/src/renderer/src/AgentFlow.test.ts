@@ -2,11 +2,14 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentEvent, AgentSnapshot } from "../../../../daemon/src/agent-protocol.ts"
+import type { ProviderSnapshot } from "../../../../daemon/src/provider-protocol.ts"
 import App from "./App.vue"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { agentInput, agentPermission, agentSnapshot } from "./test/agent.ts"
 import { catalogFixture, workspaceId } from "./test/catalog.ts"
+import { useProvidersStore } from "./stores/providers.ts"
+import { deferred } from "./test/desktop-media.ts"
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }
@@ -35,6 +38,7 @@ beforeEach(async () => {
     if (method === "_deskfleet/session/list") return []
     if (method === "_deskfleet/session/create") {
       snapshot.session.title = String(params.title)
+      snapshot.session.provider = String(params.provider)
       catalog.workspaces[0]!.worktrees.push({ id: "31", sessionId: "30", workspaceId, directories: [{ path: "/worktree/new" }] })
       return structuredClone(snapshot)
     }
@@ -92,6 +96,77 @@ test("the new-session composer remembers a working-directory choice and creates 
   window.localStorage.removeItem("deskfleet.session-context")
 })
 
+test("new sessions use the selected configured provider and show its name", async () => {
+  vi.spyOn(window.deskfleet.providers, "list").mockResolvedValue({
+    templates: [],
+    providers: [
+      { id: "codex", template: "codex", name: "Codex", env: {} },
+      { id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: { CODEX_HOME: "/work/config" } },
+    ],
+  })
+  await useProvidersStore(pinia).refresh()
+  await flushPromises()
+  await wrapper.get('[aria-label="Choose provider"]').setValue("work-codex")
+  expect(wrapper.find('[data-provider-icon="deepseek"]').exists()).toBe(true)
+  await wrapper.get("textarea").setValue("Use the work account")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ provider: "work-codex" })
+  expect(wrapper.get('[title="Agent provider"]').text()).toContain("Work Codex")
+  expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
+  expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
+
+  vi.mocked(window.deskfleet.providers.list).mockResolvedValue({ templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "claude", env: {} }] })
+  await useProvidersStore(pinia).refresh()
+  await flushPromises()
+  expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
+  expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
+})
+
+test("restored sessions show pending provider identity until its configuration loads", async () => {
+  wrapper.unmount()
+  disposePinia(pinia)
+  const read = deferred<ProviderSnapshot>()
+  const list = vi.spyOn(window.deskfleet.providers, "list").mockReturnValueOnce(read.promise)
+  snapshot.session.provider = "work-codex"
+  const call = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/session/list"
+    ? Promise.resolve([structuredClone(snapshot.session)]) : call(method, params))
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  pinia = createPinia()
+  wrapper = mount(App, { global: { plugins: [pinia, router, i18n], stubs: { Teleport: true, LiveTerminal: true } } })
+  await flushPromises()
+  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Agent provider")
+  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(true)
+  expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(true)
+  expect(wrapper.text()).not.toContain("Provider unavailable")
+
+  read.resolve({ templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} }] })
+  await flushPromises()
+  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Work Codex")
+  expect(wrapper.get('[title="Agent provider"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
+  expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
+  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(false)
+
+  list.mockResolvedValue({ templates: [], providers: [] })
+  await useProvidersStore(pinia).refresh()
+  await flushPromises()
+  expect(wrapper.get('[title="Agent provider"]').text()).toBe("Provider unavailable")
+  expect(wrapper.find('[title="Agent provider"] [data-provider-pending]').exists()).toBe(false)
+  expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(false)
+})
+
+test("an empty provider list links to Agents settings and prevents session creation", async () => {
+  vi.spyOn(window.deskfleet.providers, "list").mockResolvedValue({ templates: [], providers: [] })
+  await useProvidersStore(pinia).refresh()
+  await flushPromises()
+  await wrapper.get("textarea").setValue("Keep my draft")
+  expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+  expect(wrapper.find('a[href="#/settings/agents"]').exists()).toBe(true)
+  await wrapper.get("textarea").trigger("keydown", { key: "Enter" })
+  expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/session/create")).toBe(false)
+})
+
 test("a stopped agent asks for nothing and the next message is simply sent", async () => {
   await wrapper.get("textarea").setValue("Implement the feature")
   await wrapper.get('[aria-label="Send"]').trigger("click")
@@ -121,13 +196,24 @@ test("a Session's shells open in its bottom panel, belong to its Worktree, and s
   }))
   expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
   await wrapper.get('[aria-label="Show terminal"]').trigger("click")
-  await wrapper.get('[aria-label="Session terminals"]').findAll("button").find(item => item.text() === "New shell")!.trigger("click")
   await flushPromises()
+  expect(dial).toHaveBeenCalledOnce()
   expect(dial).toHaveBeenCalledWith(expect.objectContaining({ mode: "create", worktreeId: "31" }))
   expect(dial.mock.calls[0]![0]).not.toHaveProperty("cwd")
   expect(wrapper.get('[aria-label="Session terminals"]').findAll('[role="tab"]')).toHaveLength(1)
   expect(wrapper.get("aside").find('a[href^="#/terminals/"]').exists()).toBe(false)
   await wrapper.get('[aria-label="Hide terminal"]').trigger("click")
   expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
+  await wrapper.get('[aria-label="Show terminal"]').trigger("click")
+  await flushPromises()
+  expect(dial).toHaveBeenCalledOnce()
+  await wrapper.get('[aria-label="Session terminals"] [aria-label="Hang up Shell 1"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.find('[aria-label="Session terminals"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Show terminal"]').exists()).toBe(true)
+  await wrapper.get('[aria-label="Show terminal"]').trigger("click")
+  await flushPromises()
+  expect(dial).toHaveBeenCalledTimes(2)
+  expect(wrapper.get('[aria-label="Session terminals"]').findAll('[role="tab"]')).toHaveLength(1)
   window.localStorage.removeItem("deskfleet.terminal-panel-open")
 })
