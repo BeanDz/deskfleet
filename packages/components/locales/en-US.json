@@ -184,7 +184,7 @@
     "controlHint": "Click the desktop to send mouse and keyboard input.",
     "video": "Remote desktop video",
     "checking": "Checking the local desktop…",
-    "ready": "Choose a display and connect to start sharing. Video codec: {codec}.",
+    "ready": "Choose a display and connect to start sharing.",
     "connecting": "Connecting with {codec}…",
     "starting": "Starting screen capture with {codec}…",
     "connected": "Connected · {codec}",
@@ -195,7 +195,8 @@
     "connectionFailed": "The desktop connection failed.",
     "timeout": "The desktop connection timed out. Check the daemon and try again.",
     "fullscreen": "Full screen",
-    "fullscreenFailed": "Could not enter full screen.",
+    "exitFullscreen": "Exit full screen",
+    "fullscreenFailed": "Could not change full screen mode.",
     "play": "Play desktop video"
   },
   "panel": {
@@ -387,6 +388,7 @@
     "awaitingApproval": "Awaiting approval",
     "copy": "Copy message",
     "copied": "Copied",
+    "copyFailed": "Could not copy the message. Try again.",
     "working": "Working",
     "workingFor": "Working for {duration}",
     "worked": "Worked",
