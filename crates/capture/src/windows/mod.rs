@@ -19,11 +19,8 @@ use crate::types::{CaptureConfig, Display};
 
 mod device;
 mod frames;
-pub use device::displays;
-use device::{
-    create_d3d11_device, create_duplication, find_dxgi_output, pre_allocate_pool,
-    try_recreate_duplication,
-};
+pub use device::{create_d3d11_device, displays};
+use device::{create_duplication, find_dxgi_output, pre_allocate_pool, try_recreate_duplication};
 use frames::{
     make_frame_from_resource, process_frame, send_frame_from_texture, update_last_desktop,
 };
@@ -79,8 +76,8 @@ impl WindowsStream {
         }
         let (video_tx, video_rx) = mpsc::sync_channel::<Frame>(3);
 
-        // 1. Create a D3D11 device.
-        let (device, context) = create_d3d11_device()?;
+        // 1. Create a D3D11 device on the adapter that owns this display.
+        let (device, context) = create_d3d11_device(display.id)?;
 
         // 2. Find the DXGI output matching this monitor.
         let (_output1, desc) = find_dxgi_output(&device, display.id)?;
