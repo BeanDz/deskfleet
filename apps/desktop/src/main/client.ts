@@ -1,7 +1,8 @@
+import { installCentralAccount } from "./central-account.ts"
 import { app, powerMonitor } from "electron"
 import { join } from "node:path"
 import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
-import { resolveAppLocale } from "../shared/i18n.ts"
+import { resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
 import { setMainLocale } from "./i18n.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"
@@ -27,6 +28,7 @@ function start(): void {
     setMainLocale(resolveAppLocale(app.getPreferredSystemLanguages()))
     installRendererProtocol()
     installDesktopMediaIpc()
+    await installCentralAccount()
     denyChromiumPermissions()
     // The dev runner, service managers, and session shutdown stop the client with
     // signals. Electron's own handlers, installed during startup, request an

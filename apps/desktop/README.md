@@ -32,9 +32,10 @@ downloads its platform binary the first time it is resolved.
 | --- | --- | --- |
 | `src/main` | Electron main process | `out/main/index.js` (ESM) |
 | `src/preload` | Sandboxed preload | `out/preload/index.cjs` (CommonJS) |
-| `src/renderer` | Vue renderer | `out/renderer` |
+| `src/renderer` | Renderer bootstrap | `out/renderer` |
 | `src/shared` | Code imported by more than one process | Inlined into each bundle |
-| `src/locales` | Message catalogs for the main process and renderer | Inlined into each bundle |
+| `packages/components` | Shared Vue UI and locale catalogs for desktop and web | Inlined into renderer |
+| `packages/client` | Platform contracts and remote transport | Inlined into host bundles |
 | `build` | Packaging input and runtime window and tray images | Selected files in `app.asar` |
 
 Each process has its own Vite configuration (`vite.main.config.ts`,
@@ -42,39 +43,51 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 
 ## Interface layout
 
-`useFleetStore` loads the local daemon's persistent catalog through authenticated
-IPC. The desktop starts its bundled local Agent by default; use **Add workspace**
-beside the local machine. Supply its name and select at least one directory in
-the in-app folder picker. The picker browses the daemon's filesystem, with home,
-root, parent navigation, and a hidden-folder toggle. Selecting an existing path
-opens the picker to replace it; **Add directory** opens it for another path.
-Directories have no names; the first is the default. Move paths up or down to
-change their order and default. A new Workspace shows its directories and an
-empty Session list. Edit the Workspace to change its name and directories, or
-choose **New session** to target it in the composer. Worktrees are read-only
-execution contexts reached from their owning Session. They are created and
-removed by Session lifecycle operations. The catalog's main Worktree is internal
-storage for Workspace directories and is not a separate resource in the UI.
-Deleting a Workspace removes its catalog records, leaving source directories
-untouched; existing Sessions prevent deletion. The UI refreshes on catalog changes,
-window focus, and the explicit refresh action; failures retain the displayed
-catalog and show an error.
+The production client signs in to a configured backend through OIDC and selects
+a team and an enrolled machine. The Electron main process owns account HTTP and
+WebSocket connections and stores the application token using Electron safeStorage.
+A narrow preload adapter exposes operations and events without exposing that token
+to the renderer. The browser callback uses a temporary loopback listener and a
+client verifier bound to the one-time login code.
 
-The footer identifies this as local mode, without account or organization
-membership. Database Machine IDs remain distinct from the `local-daemon`
-connection target. The desktop route supports live WebRTC playback; **New
-terminal** opens a native PTY, and **Open terminal here** on a Workspace directory
-starts one at that path with machine scope. On a Session's Worktree page it opens
-a Session shell in that Session's bottom panel instead. The application
-does not display sample machines as live resources.
+The common UI in `packages/components` browses synchronized catalogs and history.
+Team selection, member administration, invitation codes, and machine enrollment
+are shared with the independently deployed Web application. A Team menu sits at
+the top of the sidebar. The selected machine's workspace tree appears below it;
+the Team's other machines appear as collapsed groups, and opening one switches
+to it. Team creation/joining and Add machine open focused dialogs. Team settings,
+alongside Preferences and Agents, manages the name, members and roles, and
+machines. It remains available while a Team has no machines. The account menu
+and sign-out action live in the sidebar footer.
+Add machine offers this computer on the desktop, which enrolls its hosted daemon;
+an existing enrollment is never silently reassigned. For another machine, paste
+the output of `deskfleet-daemon status` into the dialog and import the issued
+credential on that machine. Either path names the machine for the Team, starting
+from its hostname; any member can rename it later in Team settings, and every
+client shows that name in place of the hostname.
+After administrator removal, local enrollment first stops the retired execution
+context and prepares a new empty directory and identity. The previous data stays
+at its original paths; the new registration can join the same Team again.
 
-Accounts, organization switching, remote machine registration, and target
-pickers remain unimplemented. Placeholder controls
-use `IconButton`'s `placeholder` state or the `common.placeholderControl` title.
+Workspace creation and editing use the target daemon's filesystem browser through
+central management APIs.
+Management uses authenticated HTTP; live Agent, Git, terminal, and desktop traffic
+uses an authorized WebRTC peer with server-provided STUN/TURN settings. Offline
+machines retain their synchronized catalog and readable conversation history.
+Catalog loading indicators describe the first snapshot for the selected machine.
+Background catalog and presence updates preserve the existing workspace tree,
+selection, and content while refreshing; failures still expose their error and
+disable unavailable operations.
+
+The selected machine has its own application state. Switching machines disposes
+that view's peers and caches without stopping the remote agents or terminals.
+Peer authorization expires independently of signaling: a server disconnection
+alone does not close established DataChannels, while revocation and the grant's
+24-hour deadline do.
 
 The window is frameless and has three columns. The sidebar holds the window
 toolbar (sidebar toggle, back, forward), the New session action, the resource
-tree, and a local-mode footer. The main pane shows the routed view under a header row
+tree, and the Team and machine selectors. The main pane shows the routed view under a header row
 that takes over the toolbar while the sidebar is hidden. The details panel on the
 right describes the current route's resource; its header toggle and its tab
 persist per device. The macOS traffic lights sit in the sidebar's toolbar row.
@@ -141,7 +154,7 @@ The composer's context menu chooses **New worktree**, isolated Git checkouts fro
 each directory's committed HEAD, or **Working directory**, which works in the
 Workspace's directories with their uncommitted changes. The last choice is
 remembered. Provisioning failures remain visible with their error and can be
-deleted; they do not expose a usable Worktree.
+archived; they do not expose a usable Worktree.
 
 Click the Agent summary in the composer to open a menu with Agent, Model, and
 Reasoning rows. Each row opens a submenu of choices with the current choice
@@ -166,14 +179,15 @@ that decision and removes the choices.
 
 **Cancel turn** ends the current turn. **Stop agent** preserves the conversation,
 backlog, and Worktree. The next message resumes the saved provider session when
-supported; there is no separate resume control. **Delete session** removes its conversation and any generated
-checkouts; a working-directory Session's files are left in place;
-command audit remains in the daemon database. Navigating away, disconnecting, or
+supported; there is no separate resume control. **Archive session** closes execution and retains the conversation and working
+context. **Restore session** makes it available again without starting a provider
+or terminal. Session deletion is not exposed to users. Navigating away, disconnecting, or
 closing the window leaves the agent running; quitting the app stops it.
 
 The terminal button in a Session's header opens a resizable bottom panel of
 shells in that Session's Worktree. Its open state and height are remembered per
-device. Leaving the Session detaches these shells; deleting it hangs them up. Restarting the daemon retains history
+device. Leaving the Session detaches these shells; archiving it stops them and
+retains their transcripts. Restarting the daemon retains history
 and marks interrupted runs; the next message resumes them.
 
 `useAgentSessionsStore` subscribes to snapshots and replays the committed event
@@ -203,7 +217,7 @@ replays full persisted history. The visible scrollback is 5,000 lines, without
 changing the daemon's retention; it will become a Terminal setting. Tabs show
 the connection as an icon and use the title the running program reports. See
 [terminal integration](../../agents/docs/terminals.md) for the wire contract and
-the remaining cross-machine signaling work.
+authorized remote signaling.
 
 ## Desktop playback
 
@@ -217,8 +231,7 @@ keeps running.
 Electron's main process discovers the local daemon through
 `~/.deskfleet/daemon.json`. Set `DESKFLEET_DAEMON_DIRECTORY` in both processes to
 use an isolated instance. The preload carries signaling and control only;
-Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Central server signaling and
-keyboard/mouse control are not connected yet.
+Chromium's `RTCPeerConnection` and `<video>` handle incoming media. Remote signaling goes through the backend; keyboard/mouse control remains separate work.
 
 See [media integration](../../agents/docs/media.md) for supported capture
 platforms, permissions, ownership, and the native pipeline.
@@ -288,7 +301,7 @@ isolated instance for both the client and its bundled daemon.
 
 ## Localization
 
-`src/locales/<locale>.json` holds one catalog per supported locale. Currently these
+`packages/components/locales/<locale>.json` holds one catalog per supported locale. Currently these
 are `en-US` and `zh-cmn-Hans-CN`. The main process selects the first supported
 locale from the OS language preferences and passes it to the preload through
 `additionalArguments`. The renderer reads it from `window.deskfleet.locale`.
@@ -301,7 +314,7 @@ catalogs share keys and parameters and that literal `t("…")` keys exist.
 
 ## Styling
 
-Colors are CSS custom properties in `src/renderer/src/styles.css`, with light and
+Colors are CSS custom properties in `packages/components/src/styles.css`, with light and
 dark values. UnoCSS exposes them as `*-ui-<name>` utilities. presetMini has no
 preflight and omits some Wind utilities such as `list-none`, so `styles.css` also
 holds a small base reset.
@@ -313,7 +326,7 @@ stylesheet.
 ## Renderer security
 
 The renderer runs with context isolation, the Chromium sandbox, and no Node
-integration. The preload exposes `window.deskfleet` (`src/shared/desktop-api.ts`)
+integration. The preload exposes `window.deskfleet` (`packages/client/src/desktop-api.ts`)
 only to the main renderer document. Keep that interface narrow; agent output and
 repository content are untrusted display data.
 
@@ -321,7 +334,7 @@ Bundled builds load from the privileged `deskfleet-app://bundle/` scheme, which
 serves only files inside `out/renderer`. Development builds accept only the fixed
 loopback Vite URL. Each build injects its Content Security Policy into
 `index.html`. Production builds forbid renderer HTTP/WebSocket connections;
-WebRTC carries peer media and a narrow preload API carries local signaling. The
+WebRTC carries peer media and a narrow preload API carries authorized central signaling. The
 media policy permits local streams.
 The window denies new windows, navigation, and Chromium permission requests.
 Routing uses hash history so every route stays on the single bundled document.
@@ -364,6 +377,7 @@ real artwork of the same sizes.
 ```sh
 mise run check:desktop-types  # vue-tsc over all processes, configs, and scripts
 mise run check:desktop        # Vitest: main/shared in Node, renderer in happy-dom
+mise run backend:smoke-clients # Web and Electron login, remote RTC, archive, and history (TEST_DATABASE_URL)
 mise run desktop:smoke-media  # real Chromium/native H.264 decode; no screen capture
 mise run desktop:smoke-terminal  # real PTY I/O, resize, and reattachment over WebRTC
 mise run desktop:smoke-catalog  # built renderer CRUD, SQLite persistence, and directory shell cwd

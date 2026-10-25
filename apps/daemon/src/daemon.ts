@@ -1,11 +1,9 @@
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { join } from "node:path"
 import { nativeInfo, requestScreenCaptureAccess } from "@deskfleet/native"
 import { PeerSessions } from "./peers.ts"
 import { startControlServer } from "./control-server.ts"
-import { TerminalSessions } from "./terminals.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
 import { ScreenCapturePermissions } from "./screen-capture-permission.ts"
 import type { AgentProvider } from "./agents/acp.ts"
@@ -14,12 +12,13 @@ export async function startDaemon(port = 0, options: {
   controlDirectory?: string
   requestScreenCaptureAccess?: () => Promise<boolean | null>
   agentProvider?: AgentProvider
+  /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
+  allowLocalControlForTests?: boolean
 } = {}) {
   const native = nativeInfo()
   const permissions = new ScreenCapturePermissions()
   const peers = new PeerSessions()
   const controlDirectory = options.controlDirectory ?? daemonControlDirectory()
-  const terminals = new TerminalSessions({ directory: join(controlDirectory, "terminals") })
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
       response.writeHead(200, { "content-type": "application/json" })
@@ -49,7 +48,6 @@ export async function startDaemon(port = 0, options: {
         for (const cleanup of [
           () => control?.stop(),
           () => peers.closeAll(),
-          () => terminals.close(),
           () => server[Symbol.asyncDispose](),
           () => control?.close(),
         ]) {
@@ -61,9 +59,9 @@ export async function startDaemon(port = 0, options: {
     return closed
   }
   try {
-    control = await startControlServer(peers, controlDirectory, undefined, terminals, () => { void close() }, permissions, options.agentProvider)
+    control = await startControlServer(peers, controlDirectory, undefined, undefined, () => { void close() }, permissions, options.agentProvider, { allowLocalControlForTests: options.allowLocalControlForTests })
   } catch (error) {
-    const cleanup = await Promise.allSettled([peers.closeAll(), terminals.close(), server[Symbol.asyncDispose]()])
+    const cleanup = await Promise.allSettled([peers.closeAll(), server[Symbol.asyncDispose]()])
     const failures = cleanup.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError([error, ...failures], "Daemon startup and cleanup failed", { cause: error })
     throw error
@@ -73,7 +71,8 @@ export async function startDaemon(port = 0, options: {
   return {
     address: `http://127.0.0.1:${address.port}`,
     peers,
-    terminals,
+    get terminals() { return control!.terminals },
+    get central() { return control!.central },
     /** Completes after discovery and all native/server resources have closed. */
     closed,
     close,

@@ -1,6 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import type { AgentCommand, AgentElicitation, AgentSnapshot } from "./agent-protocol.ts"
-import { AgentJournal, timestamp } from "./agent-store.ts"
+import { AgentJournal, requireActiveSession, timestamp } from "./agent-store.ts"
 import { redactElicitationRequest, redactElicitationResponse, validateElicitationResponse } from "./agent-elicitation-protocol.ts"
 
 interface RuntimeState {
@@ -55,13 +55,14 @@ export class AgentElicitations {
     const state = this.#state()
     const pending = this.#pending.get(elicitation.id)
     return !!pending && !pending.signal.aborted && state.running && state.generation === elicitation.runGeneration
-      && snapshot.session.lifecycle === "ready"
+      && snapshot.session.lifecycle === "ready" && snapshot.session.archiveState === "active"
       && (!elicitation.turnId || snapshot.turns.some(turn => turn.id === elicitation.turnId && ["starting", "running"].includes(turn.state)))
   }
 
   async respond(command: AgentCommand, value: unknown): Promise<AgentElicitation> {
     return this.#journal.serial(this.#sessionId, async () => {
       const snapshot = await this.#journal.read(this.#sessionId)
+      requireActiveSession(snapshot.session)
       const previous = snapshot.elicitations.find(row => row.id === command.params.elicitationId)
       if (!previous) throw new Error("Question was not found")
       const response = validateElicitationResponse(previous.request, value)
@@ -73,10 +74,11 @@ export class AgentElicitations {
           : { ...previous, state: "cancelled", response: { action: "cancel" }, resolvedAt: timestamp() }
       }
       const changed = result !== previous
+      const completed = { ...command, status: "completed" as const, result, completedAt: timestamp() }
       await this.#journal.commit(snapshot, {
         elicitations: changed ? [result] : [],
-        command: { ...command, status: "completed", result, completedAt: timestamp() },
-        events: changed ? [this.#journal.event(this.#sessionId, "elicitation", result)] : [],
+        command: completed,
+        events: changed ? [this.#journal.event(this.#sessionId, "elicitation", result)] : [this.#journal.event(this.#sessionId, "command", completed)],
       })
       if (changed) {
         this.#pending.get(result.id)?.resolve(result.state === "resolved" ? response : { action: "cancel" })

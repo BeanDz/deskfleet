@@ -68,6 +68,18 @@ try {
     const response = await fetch(`${ready.address}/healthz`, { signal: timeout })
     assert.equal(response.status, 200)
     assert.deepEqual(await response.json(), { status: "ok", native: expectedNative })
+    const status = JSON.parse(execFileSync(command, ["status"], {
+      cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+    })) as { configured: boolean; connected: boolean; revoked: boolean; identity: { originId: string; machineId: string } }
+    assert.equal(status.configured, false)
+    assert.equal(status.connected, false)
+    assert.equal(status.revoked, false)
+    assert.ok(status.identity.originId)
+    assert.match(status.identity.machineId, /^\d+$/u)
+    const prepared = JSON.parse(execFileSync(command, ["prepare-enrollment"], {
+      cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+    })) as typeof status
+    assert.deepEqual(prepared.identity, status.identity, "An unregistered machine needs no directory reset")
     child.kill("SIGTERM")
     const [code, signal] = await Promise.race([closed, deadline])
     if (process.platform !== "win32") {

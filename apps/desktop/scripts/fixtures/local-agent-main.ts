@@ -13,7 +13,7 @@ import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { denyChromiumPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
-import type { DeskfleetDesktopApi } from "../../src/shared/desktop-api.ts"
+import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
 
 export interface LocalAgentSmokeContext {
   phase: "start" | "restart" | "disabled" | "external"
@@ -280,7 +280,7 @@ void app.whenReady().then(async () => {
   const controller = new LocalAgentController(
     join(app.getPath("userData"), "settings.json"),
     // Automated smoke runs must never display operating-system permission prompts.
-    createLocalAgentRuntime({ directory: context.daemonDirectory, start: controlDirectory => startDaemon(0, { controlDirectory, requestScreenCaptureAccess: async () => false }) }),
+    createLocalAgentRuntime({ directory: context.daemonDirectory, start: controlDirectory => startDaemon(0, { allowLocalControlForTests: true, controlDirectory, requestScreenCaptureAccess: async () => false }) }),
     publishLocalAgentState,
   )
   installDesktopMediaIpc()
