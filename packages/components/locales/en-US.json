@@ -70,7 +70,7 @@
     "local": "This machine",
     "addWorkspace": "Add workspace",
     "noWorkspaces": "No workspaces",
-    "remoteDesktop": "Remote desktop",
+    "remoteControl": "Remote control",
     "online": "Online"
   },
   "newSession": {
@@ -151,6 +151,11 @@
     "showPanel": "Show terminal",
     "hidePanel": "Hide terminal"
   },
+  "remoteControl": {
+    "terminal": "Terminal",
+    "desktop": "Desktop",
+    "filesUnavailable": "File transfer is unavailable for this machine."
+  },
   "desktop": {
     "notFound": "This machine does not exist.",
     "unavailable": "Remote desktop is not available yet.",
@@ -186,7 +191,7 @@
     "label": "Details",
     "details": "Details",
     "changes": "Changes",
-    "nothingSelected": "Select a worktree, session, terminal, or desktop to see its details.",
+    "nothingSelected": "Select a worktree, session, terminal, or machine control page to see its details.",
     "noWorktree": "Git changes are available within a session.",
     "machine": "Machine",
     "workspace": "Workspace",
@@ -541,5 +546,37 @@
     "credentialsWarning": "These credentials are shown only once. Anyone who has them can act as this machine.",
     "emptyTitle": "Add a machine to {team}",
     "emptyDescription": "Team members run agents and open terminals on the team’s machines. Connect this computer or a server to get started."
+  },
+  "files": {
+    "title": "File transfer",
+    "local": "This computer",
+    "chooseFolder": "Choose folder",
+    "refresh": "Refresh",
+    "select": "Select {name}",
+    "empty": "This folder is empty.",
+    "close": "Close",
+    "send": "Send to remote",
+    "receive": "Download to this computer",
+    "queue": "Transfer queue",
+    "noTransfers": "No transfers",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "keepBoth": "Keep both",
+    "skip": "Skip",
+    "replace": "Replace",
+    "loadingResource": "Loading image…",
+    "imageUnavailable": "Image unavailable",
+    "resourceUnavailable": "This resource is unavailable. Connect to its machine and try again.",
+    "notImage": "This file cannot be displayed as an image.",
+    "state": {
+      "queued": "Queued",
+      "preparing": "Preparing",
+      "transferring": "Transferring",
+      "completed": "Complete",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "conflict": "Exists"
+    },
+    "showHidden": "Show hidden items"
   }
 }

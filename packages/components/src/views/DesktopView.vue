@@ -6,8 +6,6 @@ import { onClickOutside } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
-import PaneHeader from "../components/chrome/PaneHeader.vue"
-import ResourcePath from "../components/chrome/ResourcePath.vue"
 import IconButton from "../components/common/IconButton.vue"
 import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "../composables/useDesktopConnection.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
@@ -146,14 +144,7 @@ const detail = computed(() => local.value ? failure.value?.detail ?? discoveryEr
 </script>
 
 <template>
-  <PaneHeader>
-    <template v-if="machine">
-      {{ t("machine.remoteDesktop") }}
-      <ResourcePath :segments="[machine.name]" />
-    </template>
-  </PaneHeader>
-
-  <div class="flex min-h-0 flex-1 flex-col px-4 pb-4">
+  <div class="flex min-h-0 flex-1 flex-col">
     <!-- The stream fills the pane; its controls and settings float above it. -->
     <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors" :class="stream ? 'border-transparent bg-ui-terminal' : 'border-ui-border bg-ui-surface'">
       <video
