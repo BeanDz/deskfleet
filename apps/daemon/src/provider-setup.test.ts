@@ -207,7 +207,7 @@ test("Pi Windows setup uses the native installer and safely launches its managed
   const directory = "C:\\User's $tools\\pi-agent"
   const binary = `${directory}\\bin\\pi.cmd`
   const powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-  const f = fixture({ platform: "win32", env: { PATH: "" }, files: [binary, powershell], answer: async (_command, args) =>
+  const f = fixture({ platform: "win32", env: { PATH: "", SYSTEMROOT: "C:\\Windows" }, files: [binary, powershell], answer: async (_command, args) =>
     args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
   const provider = input("pi", { env: { PI_CODING_AGENT_DIR: directory, TOKEN: "sensitive-value" } })
   await f.setup.install(provider)
