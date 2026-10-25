@@ -3,10 +3,11 @@ import { isDeepStrictEqual } from "node:util"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
 import { AGENT_CHANNEL, type AgentMethod } from "./agent-protocol.ts"
 import type { ControlPeers } from "./control-server.ts"
-import { desktopErrorEvent, encoderFailure, type DesktopStart, type IceCandidate } from "./control-protocol.ts"
+import { desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, type DesktopStart, type IceCandidate } from "./control-protocol.ts"
 import type { MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } from "./central-protocol.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
+import { DesktopInputChannel } from "./desktop-input.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import { FilesChannel, fileAction } from "./files-channel.ts"
 import { FILES_CHANNEL } from "./files-protocol.ts"
@@ -32,6 +33,8 @@ interface AuthorizedPeer {
   terminal?: TerminalChannel
   agent?: AgentChannel
   files?: FilesChannel
+  input?: DesktopInputChannel
+  desktopStart?: "starting" | "started"
 }
 
 /** Resolve the empty mid emitted by native WebRTC from the authenticated SDP. */
@@ -54,6 +57,7 @@ export class AuthorizedPeers {
   readonly #signal: (peerId: string, event: PeerSignal) => void
   readonly #now: () => number
   readonly #peers = new Map<string, AuthorizedPeer>()
+  readonly #closing = new Map<string, Promise<void>>()
   readonly #used = new Map<string, number>()
   #credentials: MachineCredentials | undefined
   #identity: { originId: string; machineId: string }
@@ -152,6 +156,7 @@ export class AuthorizedPeers {
           failure,
         )
       }
+      if (purpose === "desktop") owned.input = new DesktopInputChannel(peer, () => { this.#live(params.peerId, "desktop:control") })
       // Candidate events can race answerOffer. Hold them until the answer SDP is bound.
       const answer = await peer.answerOffer(params.sdp)
       this.#live(params.peerId)
@@ -169,13 +174,25 @@ export class AuthorizedPeers {
   async start(id: string, options: Omit<DesktopStart, "sessionId">): Promise<void> {
     const owned = this.#live(id, "desktop:stream")
     if (owned.authorization.purpose !== "desktop") throw new Error("A desktop peer is required")
+    if (options.control) this.#live(id, "desktop:control")
+    if (owned.desktopStart) throw new Error(`Desktop stream is already ${owned.desktopStart}`)
+    owned.desktopStart = "starting"
     const native = await owned.native
     try {
+      this.#live(id, "desktop:stream")
       await native.startDesktop(options)
+      this.#live(id, "desktop:stream")
+      if (options.control) await owned.input!.enable()
+      this.#live(id, "desktop:stream")
+      owned.desktopStart = "started"
     } catch (error) {
       const failure = native.takeMediaFailure?.()
-      if (failure?.reason === "encoder") throw encoderFailure(failure.message)
-      throw error
+      const startupError = failure?.reason === "encoder" ? encoderFailure(failure.message) : error
+      try { await this.close(id) }
+      catch (cleanup) {
+        throw desktopStartupCleanupFailure(startupError, cleanup)
+      }
+      throw startupError
     }
   }
 
@@ -195,6 +212,7 @@ export class AuthorizedPeers {
         if (this.#peers.get(id) !== owned) return
         if (!event) break
         this.#live(id)
+        await owned.input?.receive(event)
         if (event.kind === "data" && event.data) {
           if (owned.agent && event.label === AGENT_CHANNEL) owned.agent.receive(event.data, event.isString === true)
           if (owned.files && event.label === FILES_CHANNEL) owned.files.receive(event.data, event.isString === true)
@@ -219,18 +237,25 @@ export class AuthorizedPeers {
   }
 
   async close(id: string): Promise<void> {
+    const closing = this.#closing.get(id)
+    if (closing) return closing
     const peer = this.#peers.get(id)
     if (!peer) return
     this.#peers.delete(id)
     clearTimeout(peer.timer)
     peer.agent?.close(); peer.terminal?.close()
-    const results = await Promise.allSettled([peer.files?.close(), this.#native.close(id)])
-    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
-    if (failures.length) throw new AggregateError(failures, "Failed to close authorized peer")
+    peer.input?.close()
+    const pending = Promise.allSettled([peer.files?.close(), this.#native.close(id)]).then(results => {
+      const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+      if (failures.length) throw new AggregateError(failures, "Failed to close authorized peer")
+    })
+    this.#closing.set(id, pending)
+    try { await pending }
+    finally { this.#closing.delete(id) }
   }
 
   async closeAll(): Promise<void> {
-    const results = await Promise.allSettled([...this.#peers.keys()].map(id => this.close(id)))
+    const results = await Promise.allSettled([...new Set([...this.#peers.keys(), ...this.#closing.keys()])].map(id => this.close(id)))
     const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError(failures, "Failed to close authorized peers")
   }

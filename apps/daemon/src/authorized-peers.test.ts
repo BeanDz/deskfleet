@@ -11,6 +11,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { encodeFileFrame, FileFrameDecoder } from "./files-wire.ts"
+import { encoderFailure, isEncoderFailure } from "./control-protocol.ts"
 
 const sdp = "v=0\r\na=fingerprint:sha-256 AA:BB:CC\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\na=ice-ufrag:test\r\n"
 const identity = { originId: "origin", machineId: "1" }
@@ -24,14 +25,19 @@ function grant(): PeerAuthorization {
   }
 }
 
-function fixture() {
-  let now = epoch, closed = false
+function fixture(closeGate?: Promise<void>, closeError?: Error) {
+  let now = epoch, closed = false, closeCalls = 0
+  let closing!: () => void
+  const closeStarted = new Promise<void>(resolve => { closing = resolve })
   const sent: string[] = [], events: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
   const packets: Buffer[] = []
+  const input: string[] = [], starts: unknown[] = [], signals: unknown[] = []
   let waiting: ((event: PeerEvent | null) => void) | undefined
   const push = (event: PeerEvent) => { if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) } else events.push(event) }
   const native = {
-    answerOffer: async () => sdp, addIceCandidate: async () => {}, startDesktop: async () => {},
+    answerOffer: async () => sdp, addIceCandidate: async () => {}, startDesktop: async (options: unknown) => { starts.push(options) },
+    sendDesktopInput: async (text: string) => { input.push(text) },
+    sendText: async (_label: string, text: string) => { sent.push(text) },
     sendData: async (_label: string, data: Buffer) => { sent.push(data.toString()); packets.push(data) },
     nextEvent: async () => events.shift() ?? (closed ? null : new Promise<PeerEvent | null>(resolve => { waiting = resolve })),
   } as unknown as NativePeer
@@ -40,15 +46,168 @@ function fixture() {
     handle: async (method, _params, actor) => { calls.push({ method, actor }); return null },
   }
   const peers = new AuthorizedPeers({
-    peers: { create: async () => native, close: async () => { closed = true; waiting?.(null) } },
-    agents, terminals: {} as TerminalSessions, identity, signal: () => {}, now: () => now,
+    peers: {
+      create: async () => native,
+      close: async () => {
+        closeCalls++; closing(); await closeGate; closed = true; waiting?.(null)
+        if (closeError) throw closeError
+      },
+    },
+    agents, terminals: {} as TerminalSessions, identity, signal: (_id, event) => { signals.push(event) }, now: () => now,
   })
   peers.bind(credentials)
   const rpc = async (id: number, method: string, params: unknown) => {
     push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
     for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
   }
-  return { peers, calls, sent, packets, rpc, push, expired: () => { now += 86_400_001 }, closed: () => closed }
+  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, closeStarted, closeCalls: () => closeCalls, expired: () => { now += 86_400_001 }, closed: () => closed }
+}
+
+test("repeated close and shutdown await the same native input cleanup", async () => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const f = fixture(gate)
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+  const closed: string[] = []
+  const first = f.peers.close("peer").then(() => { closed.push("first") })
+  const second = f.peers.close("peer").then(() => { closed.push("second") })
+  const shutdown = f.peers.closeAll().then(() => { closed.push("shutdown") })
+  await delay(0)
+  assert.deepEqual(closed, [])
+  release()
+  await Promise.all([first, second, shutdown])
+  assert.equal(closed.length, 3)
+  assert.equal(f.closed(), true)
+})
+
+test("desktop streaming grant alone cannot enable or send control", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [] })
+  await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), /does not allow/)
+  assert.equal(f.starts.length, 0)
+  await f.peers.start("peer", { displayId: 7 })
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"releaseAll"}') })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.deepEqual(f.input, [])
+})
+
+test("desktop control binds the capture display and expires before further input", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+  f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+  await f.peers.start("peer", { displayId: 7, control: true })
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+  for (let tries = 0; tries < 100 && !f.input.length; tries++) await delay(1)
+  assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+  assert.equal(f.input.length, 1)
+  assert.deepEqual(f.sent, ['{"type":"ready"}'])
+  f.expired()
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyB","pressed":true}') })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.equal(f.input.length, 1)
+})
+
+for (const phase of ["before native startup", "during input readiness"] as const) {
+  test(`desktop starts reject duplicates ${phase} and after startup without closing the peer`, { timeout: 5_000 }, async context => {
+    const f = fixture()
+    let release!: () => void, ready!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const enabling = new Promise<void>(resolve => { ready = resolve })
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const startDesktop = f.native.startDesktop.bind(f.native)
+    f.native.startDesktop = async options => {
+      await startDesktop(options)
+      if (phase === "before native startup") await gate
+    }
+    const sendText = f.native.sendText.bind(f.native)
+    f.native.sendText = async (label, text) => {
+      ready()
+      if (phase === "during input readiness") await gate
+      await sendText(label, text)
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+    await delay(0)
+    const first = f.peers.start("peer", { displayId: 7, control: true })
+    if (phase === "during input readiness") await enabling
+    await assert.rejects(f.peers.start("peer", { displayId: 8, control: true }), /already starting/)
+    assert.equal(f.closeCalls(), 0)
+    release()
+    await first
+    await assert.rejects(f.peers.start("peer", { displayId: 8 }), /already started/)
+    assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+    assert.deepEqual(f.sent, ['{"type":"ready"}'])
+    assert.equal(f.closeCalls(), 0)
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+    for (let tries = 0; tries < 100 && !f.input.length; tries++) await delay(1)
+    assert.equal(f.input.length, 1)
+    assert.equal(f.closed(), false)
+  })
+}
+
+for (const primaryEncoder of [true, false]) {
+  test(`desktop startup keeps ${primaryEncoder ? "encoder" : "generic"} classification when cleanup also fails`, async context => {
+    const cleanup = encoderFailure("encoder worker terminated during cleanup")
+    const f = fixture(undefined, cleanup)
+    context.mock.method(console, "error", () => {})
+    context.after(() => f.peers.closeAll())
+    const startup = new Error(primaryEncoder ? "video encoder failed during startup" : "screen capture permission denied")
+    f.native.startDesktop = async () => { throw startup }
+    f.native.takeMediaFailure = () => primaryEncoder ? { message: startup.message, reason: "encoder" } : null
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), error => {
+      assert.ok(error instanceof AggregateError)
+      assert.equal(isEncoderFailure(error), primaryEncoder)
+      assert.ok(error.cause instanceof Error)
+      assert.equal(error.cause.message, startup.message)
+      assert.equal(error.errors[0], error.cause)
+      assert.ok(error.errors[1] instanceof AggregateError)
+      assert.deepEqual(error.errors[1].errors, [cleanup])
+      assert.ok(error.message.includes(startup.message))
+      assert.ok(error.message.includes(cleanup.message))
+      return true
+    })
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+  })
+}
+
+for (const failure of ["ready send", "expiry after capture", "expiry during ready send"] as const) {
+  test(`desktop startup rolls back ${failure} and waits for native cleanup`, { timeout: 5_000 }, async context => {
+    let release!: () => void
+    const f = fixture(new Promise<void>(resolve => { release = resolve }))
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const sendError = new Error("Input ready send failed")
+    const startDesktop = f.native.startDesktop.bind(f.native)
+    f.native.startDesktop = async options => {
+      await startDesktop(options)
+      if (failure === "expiry after capture") f.expired()
+    }
+    f.native.sendText = async () => {
+      if (failure === "ready send") throw sendError
+      if (failure === "expiry during ready send") f.expired()
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+    await delay(0)
+    let settled = false
+    const start = f.peers.start("peer", { displayId: 7, control: true }).finally(() => { settled = true })
+    const rejected = assert.rejects(start, error => failure === "ready send" ? error === sendError : error instanceof Error && /authorization has expired/.test(error.message))
+    await f.closeStarted
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+    await delay(0)
+    assert.equal(settled, false, "startup must wait for capture and input cleanup")
+    assert.equal(f.closed(), false)
+    assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+    assert.deepEqual(f.input, [])
+    release()
+    await rejected
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+    await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), /Unknown authorized peer/)
+  })
 }
 
 test("peer grant binds target, user, purpose, and a maximum 24-hour lifetime", async () => {

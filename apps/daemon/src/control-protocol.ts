@@ -43,6 +43,7 @@ export interface TerminalOffer {
 export interface DesktopStart {
   sessionId: string
   displayId: number
+  control?: boolean
   fps?: number
   bitrateBps?: number
 }
@@ -67,19 +68,35 @@ export function isEncoderFailure(error: unknown): error is Error & { reason: Des
   return typeof error === "object" && error !== null && (error as { reason?: unknown }).reason === "encoder"
 }
 
-export interface ScreenCapturePermission {
+function failureMessage(error: unknown): string {
+  if (error instanceof AggregateError) return `${error.message}: ${error.errors.map(failureMessage).join("; ")}`
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function desktopStartupCleanupFailure(startupError: unknown, cleanup: unknown): AggregateError {
+  const failure = new AggregateError([startupError, cleanup], `Desktop startup failed: ${failureMessage(startupError)}; peer cleanup failed: ${failureMessage(cleanup)}`, { cause: startupError })
+  // Cleanup can report a terminated encoder after joining it. Retry policy still
+  // belongs to the startup failure, never to a secondary cleanup diagnostic.
+  return Object.assign(failure, isEncoderFailure(startupError) ? { reason: "encoder" as const } : {})
+}
+
+export interface DesktopPermission {
   status: "requesting" | "granted" | "denied" | "not-required" | "error"
   error?: string
 }
 
-export interface LocalDaemonInfo {
+export interface DesktopPermissionsState {
+  screenCapturePermission: DesktopPermission
+  accessibilityPermission: DesktopPermission
+}
+
+export interface LocalDaemonInfo extends DesktopPermissionsState {
   name: string
   desktop: boolean
-  screenCapturePermission: ScreenCapturePermission
 }
 
 export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | ProviderEvent
-  | { kind: "screenCapturePermissionChanged"; permission: ScreenCapturePermission }
+  | { kind: "desktopPermissionsChanged"; permissions: DesktopPermissionsState }
 
 export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods {
   centralStatus: { params: Record<string, never>; result: CentralStatus }

@@ -7,7 +7,7 @@ import { join } from "node:path"
 import type { NativePeer, PeerConfig } from "@deskfleet/native"
 import { desktopCapabilities } from "./desktop-capabilities.ts"
 import { daemonDiscoveryPath, readDaemonDiscovery } from "./control-discovery.ts"
-import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, encoderFailure, isEncoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
+import { MAX_CONTROL_MESSAGE_BYTES, desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, isEncoderFailure, type ControlMessage, type ControlRequest, type DaemonDiscovery, type DesktopCapabilities, type DesktopEvent } from "./control-protocol.ts"
 import { parseControlRequest, readControlRequestId } from "./control-request.ts"
 import { endControlSocket } from "./control-socket.ts"
 import { TerminalChannel } from "./terminal-channel.ts"
@@ -15,7 +15,7 @@ import { TERMINAL_CHANNEL } from "./terminal-protocol.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { listDirectories } from "./filesystem.ts"
-import { ScreenCapturePermissions } from "./screen-capture-permission.ts"
+import { DesktopPermissions } from "./desktop-permissions.ts"
 import type { AgentSessions } from "./agent-sessions.ts"
 import { AgentChannel } from "./agent-channel.ts"
 import { AGENT_CHANNEL } from "./agent-protocol.ts"
@@ -24,6 +24,7 @@ import type { AgentProviders } from "./agent-providers.ts"
 import type { CentralClient } from "./central-client.ts"
 import { MachineRuntime } from "./machine-runtime.ts"
 import type { CentralStatus } from "./central-protocol.ts"
+import { DesktopInputChannel, DESKTOP_INPUT_CHANNEL } from "./desktop-input.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
 export interface ControlPeers {
@@ -42,6 +43,8 @@ interface OwnedPeer {
   peer: Promise<NativePeer>
   terminal?: TerminalChannel
   agent?: AgentChannel
+  input?: DesktopInputChannel
+  desktopStart?: "starting" | "started"
 }
 
 class ControlConnection {
@@ -51,7 +54,7 @@ class ControlConnection {
   readonly #capabilities: Capabilities
   readonly #terminals: TerminalSessions
   readonly #catalog: DaemonCatalog
-  readonly #permissions: ScreenCapturePermissions
+  readonly #permissions: DesktopPermissions
   readonly #agents: () => AgentSessions
   readonly #providers: AgentProviders
   readonly #onShutdownRequested: (() => void) | undefined
@@ -59,12 +62,13 @@ class ControlConnection {
   readonly #prepareEnrollment: () => Promise<CentralStatus>
   readonly #allowLocalControlForTests: boolean
   readonly #sessions = new Map<string, OwnedPeer>()
+  readonly #closingSessions = new Map<string, Promise<void>>()
   readonly #dialed = new Set<string>()
   readonly #unsubscribe: () => void
   #authenticated = false
   #closing: Promise<void> | undefined
 
-  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: ScreenCapturePermissions, agents: () => AgentSessions, providers: AgentProviders, central: () => CentralClient, prepareEnrollment: () => Promise<CentralStatus>, allowLocalControlForTests: boolean, onShutdownRequested?: () => void) {
+  constructor(socket: Socket, token: string, peers: ControlPeers, capabilities: Capabilities, terminals: TerminalSessions, catalog: DaemonCatalog, permissions: DesktopPermissions, agents: () => AgentSessions, providers: AgentProviders, central: () => CentralClient, prepareEnrollment: () => Promise<CentralStatus>, allowLocalControlForTests: boolean, onShutdownRequested?: () => void) {
     this.#socket = socket
     this.#token = token
     this.#peers = peers
@@ -85,8 +89,8 @@ class ControlConnection {
     const unsubscribeCatalog = allowLocalControlForTests ? catalog.onChange(event => {
       if (this.#authenticated) this.#send({ event })
     }) : () => {}
-    const unsubscribePermissions = permissions.onChange(permission => {
-      if (this.#authenticated) this.#send({ event: { kind: "screenCapturePermissionChanged", permission } })
+    const unsubscribePermissions = permissions.onChange(permissions => {
+      if (this.#authenticated) this.#send({ event: { kind: "desktopPermissionsChanged", permissions } })
     })
     const unsubscribeProviders = allowLocalControlForTests ? providers.onChanged(() => {
       if (this.#authenticated) this.#send({ event: { kind: "providersChanged" } })
@@ -166,7 +170,7 @@ class ControlConnection {
       return {
         name: hostname(),
         desktop: process.platform === "darwin" || process.platform === "win32",
-        screenCapturePermission: this.#permissions.state,
+        ...this.#permissions.state,
       }
     }
     if (!this.#authenticated) throw new Error("Authenticate with the local daemon first")
@@ -228,7 +232,7 @@ class ControlConnection {
       case "terminalOffer":
       case "agentOffer": {
         const { sessionId, sdp } = request.params
-        if (this.#sessions.has(sessionId)) throw new Error("Desktop session already exists")
+        if (this.#sessions.has(sessionId) || this.#closingSessions.has(sessionId)) throw new Error("Desktop session already exists")
         if (this.#sessions.size >= 8) throw new Error("Too many desktop sessions")
         const config: PeerConfig = request.method === "offer" ? { video: request.params.codec, audio: request.params.audio } : {}
         if (config.audio && process.platform !== "darwin") throw new Error("System audio capture is unavailable on this platform")
@@ -237,6 +241,9 @@ class ControlConnection {
         this.#sessions.set(sessionId, owned)
         try {
           const peer = await owned.peer
+          if (request.method === "offer") owned.input = new DesktopInputChannel(peer, () => {
+            if (this.#sessions.get(sessionId) !== owned || this.#closing) throw new Error("Desktop session is closed")
+          })
           if (request.method === "terminalOffer") {
             owned.terminal = new TerminalChannel(
               this.#terminals,
@@ -266,15 +273,31 @@ class ControlConnection {
         await (await this.#session(request.params.sessionId)).addIceCandidate(request.params.candidate)
         return null
       case "start": {
-        const { sessionId, displayId, fps, bitrateBps } = request.params
-        if (this.#sessions.get(sessionId)?.terminal || this.#sessions.get(sessionId)?.agent) throw new Error("Data-only peers cannot start desktop capture")
-        const peer = await this.#session(sessionId)
+        const { sessionId, displayId, fps, bitrateBps, control } = request.params
+        const owned = this.#sessions.get(sessionId)
+        if (!owned) throw new Error("Unknown desktop session on this connection")
+        if (owned.terminal || owned.agent) throw new Error("Data-only peers cannot start desktop capture")
+        if (owned.desktopStart) throw new Error(`Desktop stream is already ${owned.desktopStart}`)
+        owned.desktopStart = "starting"
+        const peer = await owned.peer
+        const assertLive = () => {
+          if (this.#sessions.get(sessionId) !== owned || this.#closing) throw new Error("Desktop session is closed")
+        }
         try {
-          await peer.startDesktop({ displayId, fps, bitrateBps })
+          assertLive()
+          await peer.startDesktop({ displayId, fps, bitrateBps, ...(control === undefined ? {} : { control }) })
+          assertLive()
+          if (control) await owned.input!.enable()
+          assertLive()
+          owned.desktopStart = "started"
         } catch (error) {
           const failure = peer.takeMediaFailure?.()
-          if (failure?.reason === "encoder") throw encoderFailure(failure.message)
-          throw error
+          const startupError = failure?.reason === "encoder" ? encoderFailure(failure.message) : error
+          try { await this.#closeSession(sessionId) }
+          catch (cleanup) {
+            throw desktopStartupCleanupFailure(startupError, cleanup)
+          }
+          throw startupError
         }
         return null
       }
@@ -299,6 +322,7 @@ class ControlConnection {
           await this.#closeSession(sessionId)
           return
         }
+        await owned.input?.receive(event)
         if (owned.terminal && event.label === TERMINAL_CHANNEL) {
           if (event.kind === "data" && event.data) {
             void owned.terminal.receive(event.data, event.isString === true).catch(error => {
@@ -318,7 +342,7 @@ class ControlConnection {
         if (event.kind === "stateChanged" && event.state) outgoing = { sessionId, kind: "stateChanged", state: event.state }
         if (event.kind === "error") outgoing = desktopErrorEvent(sessionId, event.error ?? "Desktop stream failed", event.reason)
         if (outgoing) this.#send({ event: outgoing })
-        if (event.kind === "error" || event.state === "failed" || event.state === "closed") {
+        if (event.kind === "error" || event.state === "failed" || event.state === "closed" || (event.kind === "dataChannelClosed" && event.label === DESKTOP_INPUT_CHANNEL)) {
           await this.#closeSession(sessionId)
           return
         }
@@ -332,19 +356,25 @@ class ControlConnection {
   }
 
   async #closeSession(sessionId: string): Promise<void> {
+    const closing = this.#closingSessions.get(sessionId)
+    if (closing) return closing
     const owned = this.#sessions.get(sessionId)
     if (!owned) return
     this.#sessions.delete(sessionId)
     owned.terminal?.close()
     owned.agent?.close()
-    await this.#peers.close(owned.nativeId)
+    owned.input?.close()
+    const pending = this.#peers.close(owned.nativeId)
+    this.#closingSessions.set(sessionId, pending)
+    try { await pending }
+    finally { this.#closingSessions.delete(sessionId) }
   }
 
   close(): Promise<void> {
     this.#socket.destroy()
     this.#unsubscribe()
     this.#dialed.clear()
-    this.#closing ??= Promise.allSettled([...this.#sessions.keys()].map(id => this.#closeSession(id))).then(results => {
+    this.#closing ??= Promise.allSettled([...new Set([...this.#sessions.keys(), ...this.#closingSessions.keys()])].map(id => this.#closeSession(id))).then(results => {
       const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
       if (errors.length) throw new AggregateError(errors, "Failed to close desktop sessions")
     })
@@ -378,7 +408,7 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new ScreenCapturePermissions(), agentProvider?: AgentProvider, options: { allowLocalControlForTests?: boolean } = {}) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new DesktopPermissions(), agentProvider?: AgentProvider, options: { allowLocalControlForTests?: boolean } = {}) {
   const machine = new MachineRuntime(directory, { peers, capabilities, agentProvider, terminals, ...options })
   await mkdir(directory, { recursive: true, mode: 0o700 })
   if (process.platform !== "win32") await chmod(directory, 0o700)
