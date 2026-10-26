@@ -1,4 +1,4 @@
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 
 /** Cursor's blocking plan-approval request. Its documented params omit a session id. */
 export const CURSOR_CREATE_PLAN_METHOD = "cursor/create_plan"

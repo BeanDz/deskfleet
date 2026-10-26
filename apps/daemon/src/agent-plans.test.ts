@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import * as acp from "@agentclientprotocol/sdk"
+import * as acp from "@agentclientprotocol/sdk/unstable"
 import { answerCursorCreatePlan, CURSOR_CREATE_PLAN_METHOD, cursorPlanApproval } from "./agents/plans.ts"
 
 const signal = new AbortController().signal
