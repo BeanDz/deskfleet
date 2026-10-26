@@ -48,11 +48,20 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
     await until(() => !!row() && !row()!.disabled, `Git ${kind} ${path}`)
     row()!.click()
     await until(() => !!diff()?.innerText.includes(expected), `Git ${kind} preview`)
+    const dialog = diff()!
+    const style = getComputedStyle(dialog)
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    const width = Math.min(70 * rem, innerWidth - 2 * rem)
+    if (Math.abs(dialog.getBoundingClientRect().width - width) > 1 || style.padding !== "0px" || style.display !== "flex" || style.flexDirection !== "column") {
+      throw new Error(`Git diff layout must be wide, unpadded, and column flex; got ${style.width}, padding ${style.padding}, ${style.display}/${style.flexDirection}`)
+    }
   }
   async function close(): Promise<void> {
-    const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")
+    const dialog = document.querySelector<HTMLElement>("[role=dialog][data-state=open]")
     if (!dialog) throw new Error("Git diff dialog was missing")
-    dialog.dispatchEvent(new Event("cancel", { cancelable: true }))
+    const closeButton = dialog.querySelector<HTMLButtonElement>('button[aria-label="Close diff"]')
+    if (!closeButton) throw new Error("Git diff close button was missing")
+    closeButton.click()
     await until(() => !diff(), "Git diff dialog close")
   }
 
@@ -68,6 +77,15 @@ async function exerciseGitChanges(phase: "initial" | "live" | "restore"): Promis
   } else {
     await until(() => !!diff()?.innerText.includes("+Smoke diff live version") && !diff()!.innerText.includes("+Smoke diff first version"), "Live Git diff refresh without agent events")
   }
+  const dialog = diff()!
+  const content = dialog.querySelector<HTMLElement>(".git-diff-content")!
+  const header = dialog.querySelector("header")!
+  const headerTop = header.getBoundingClientRect().top
+  content.scrollTop = 100
+  if (content.scrollTop !== 100 || dialog.scrollHeight > dialog.clientHeight + 1 || Math.abs(header.getBoundingClientRect().top - headerTop) > 1 || dialog.getBoundingClientRect().height > innerHeight - 32 + 1) {
+    throw new Error("Long Git diffs must scroll inside the patch while the header stays visible within the viewport")
+  }
+  content.scrollTop = 0
 }
 
 // Evaluate in the production renderer with its production sandboxed preload.
@@ -104,7 +122,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     if (!configuration()) configurationTrigger()!.click()
     await until(() => {
       const controls = configuration()?.querySelectorAll<HTMLButtonElement>("[data-agent-control]")
-      return controls?.length === 4 && !configurationControl("model")?.disabled && !configurationControl("reasoning")?.disabled
+      return controls?.length === 4 && !configurationControl("model")?.hasAttribute("data-disabled") && !configurationControl("reasoning")?.hasAttribute("data-disabled")
     }, "Dynamic Agent, model, and reasoning menu")
     require(configuration()!.querySelector('[data-agent-control="agent"]')?.textContent?.includes("Codex"), "Agent menu must display Codex")
   }
@@ -120,7 +138,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
   }
   async function selectConfiguration(kind: "agent" | "model" | "reasoning", value: string): Promise<void> {
     await openConfigurationOptions(kind)
-    await until(() => !!configurationChoice(value) && !configurationChoice(value)!.disabled, `${value} choice`)
+    await until(() => !!configurationChoice(value) && !configurationChoice(value)!.hasAttribute("data-disabled"), `${value} choice`)
     configurationChoice(value)!.click()
     await until(async () => await selectedConfiguration(kind) === value, `Confirmed agent configuration ${value}`)
   }
@@ -140,6 +158,33 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await until(() => !!link(), "Session sidebar link")
     link()!.click()
     await until(() => location.hash === `#/sessions/${id}` && !!conversation(), "Session navigation")
+  }
+  async function verifySessionPrimitives(): Promise<void> {
+    // Exercise the production Vapor/VDOM boundary: unit tests alone cannot catch
+    // as-child dropping trigger attributes and listeners from a Vapor slot.
+    await until(() => !!button("Session actions") && !button("Session actions")!.disabled, "Session actions trigger")
+    const trigger = button("Session actions")!
+    require(trigger.getAttribute("aria-haspopup") === "menu" && trigger.getAttribute("aria-expanded") === "false", "Session action IconButton must retain its menu trigger attributes")
+    trigger.focus()
+    // A hidden BrowserWindow updates activeElement without emitting native focus.
+    trigger.dispatchEvent(new FocusEvent("focus"))
+    await until(() => {
+      const tooltip = document.getElementById(trigger.getAttribute("aria-describedby") ?? "")
+      return tooltip?.getAttribute("role") === "tooltip" && tooltip.textContent?.trim() === "Session actions"
+    }, "IconButton tooltip and accessible description")
+    trigger.dispatchEvent(new FocusEvent("blur"))
+    await until(() => !trigger.hasAttribute("aria-describedby"), "Closed IconButton tooltip")
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }))
+    const menu = () => document.querySelector<HTMLElement>('[role="menu"][aria-label="Session actions"]')
+    await until(() => !!menu() && trigger.getAttribute("aria-expanded") === "true" && !!menu()!.querySelector('[role="menuitem"]'), "Session action menu opened by keyboard")
+    require(trigger.getAttribute("aria-controls") === menu()!.id, "Session action trigger must identify its rendered menu")
+    await until(() => !!menu()?.contains(document.activeElement), "Session action menu receives focus")
+    if (document.activeElement === menu()) menu()!.dispatchEvent(new FocusEvent("focus"))
+    await until(() => !!menu()?.contains(document.activeElement) && document.activeElement?.getAttribute("role") === "menuitem", "Session action menu keyboard focus")
+    document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+    await until(() => !menu() && trigger.getAttribute("aria-expanded") === "false" && document.activeElement === trigger, "Session action menu Escape restores trigger focus")
+    trigger.dispatchEvent(new FocusEvent("blur"))
+    prompt()?.focus()
   }
   async function verifyConversation(): Promise<void> {
     // Finished turns fold their work; expand every turn to inspect the full persisted journal.
@@ -181,6 +226,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await until(() => /^#\/sessions\/[0-9]+$/u.test(location.hash), "Created Session route")
     sessionId = location.hash.split("/").at(-1)!
     await until(() => !!conversation()?.innerText.includes("stream two") && !!button("Cancel turn"), "Live streamed response before turn completion")
+    await verifySessionPrimitives()
     await send("Smoke queued candidate", "Add to backlog")
     await send("Smoke selected steer", "Add to backlog")
     await until(() => backlog()?.querySelectorAll("li[data-input-id]").length === 2, "Two visible backlog candidates")
@@ -199,7 +245,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     require(permissions()!.querySelector("[data-permission-id]")!.getAttribute("data-permission-id") === permissionId, "Returning created a second permission request")
     await click("Allow smoke edit", () => permissions()!)
     await until(() => !!question()?.querySelector('[data-testid="elicitation-submit"]'), "Inline user question")
-    const choice = question()!.querySelector<HTMLInputElement>('input[name="approach"][value="Inline form"]')
+    const choice = question()!.querySelector<HTMLButtonElement>('[role="radio"][value="Inline form"]')
     const detail = question()!.querySelector<HTMLInputElement>('input[name="details"]')
     require(choice && detail, "Question must render choice and free-text fields")
     choice.click()
@@ -210,7 +256,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     await until(() => location.hash === "#/" && !conversation(), "Leaving the question pending")
     await openSession(sessionId)
     await until(() => question()?.dataset.elicitationId === questionId, "Same question after returning")
-    require(question()!.querySelector<HTMLInputElement>('input[name="approach"][value="Inline form"]')?.checked, "Question choice draft was lost during navigation")
+    require(question()!.querySelector('[role="radio"][value="Inline form"]')?.getAttribute("aria-checked") === "true", "Question choice draft was lost during navigation")
     require(question()!.querySelector<HTMLInputElement>('input[name="details"]')?.value === "Support keyboard navigation.", "Question text draft was lost during navigation")
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     console.info("deskfleet-elicitation-preview")
@@ -220,7 +266,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     submit.click()
     await until(() => !!conversation()?.innerText.includes("queued reply") && !button("Cancel turn") && !backlog(), "Backlog execution after permission and first turn completion")
     await expandConfiguration()
-    require(configurationControl("agent")?.disabled && configurationControl("agent")?.dataset.value === providerId, "A running Session must retain its selected provider")
+    require(configurationControl("agent")?.hasAttribute("data-disabled") && configurationControl("agent")?.dataset.value === providerId, "A running Session must retain its selected provider")
     require(await selectedConfiguration("model") === "fast" && await selectedConfiguration("reasoning") === "high", "A running Session must retain its draft model and reasoning selections")
     await selectConfiguration("model", "balanced")
     require(await selectedConfiguration("reasoning") === "medium", "Changing the Session model must refresh its provider-supplied reasoning configuration")
@@ -235,6 +281,7 @@ async function exerciseAgent(context: AgentSmokeContext): Promise<AgentSmokeResu
     require(sessionId && workspaceId && worktreeId && providerId, "Restore identities are required")
     await openSession(sessionId)
     await until(() => !!conversation()?.innerText.includes("changed model reply"), "Conversation replay after daemon restart")
+    await verifySessionPrimitives()
     require(![...document.querySelectorAll('[role="status"]')].some(element => /stopped|interrupted|Resume/u.test(element.textContent ?? "")), "An interrupted agent must not ask to be resumed")
     const workspace = (await api.catalog.list()).workspaces.find(value => value.id === workspaceId)
     require(workspace?.worktrees.some(value => value.id === worktreeId && value.sessionId === sessionId), "Restart replaced the Session's Worktree")
@@ -316,13 +363,14 @@ void app.whenReady().then(async () => {
     const worktreeDirectory = await window.webContents.executeJavaScript(`window.deskfleet.catalog.list().then(snapshot => snapshot.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.id === ${JSON.stringify(result.worktreeId)})?.directories[0]?.path)`) as string | undefined
     if (!worktreeDirectory) throw new Error("Session checkout directory was missing")
     if (context.phase === "create") {
+      const longPatch = Array.from({ length: 100 }, (_, index) => `Smoke diff line ${index + 1}\n`).join("")
       await writeFile(join(worktreeDirectory, "README.md"), "Smoke staged baseline\n")
       await execute("git", ["-C", worktreeDirectory, "add", "--", "README.md"])
-      await writeFile(join(worktreeDirectory, "README.md"), "Smoke diff first version\n")
+      await writeFile(join(worktreeDirectory, "README.md"), `Smoke diff first version\n${longPatch}`)
       await writeFile(join(worktreeDirectory, "new-file.txt"), "Smoke untracked file\n")
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("initial")`)
       // Preserve both the status letter and line counts: polling must fetch content, too.
-      await writeFile(join(worktreeDirectory, "README.md"), "Smoke diff live version\n")
+      await writeFile(join(worktreeDirectory, "README.md"), `Smoke diff live version\n${longPatch}`)
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("live")`)
     } else {
       await window.webContents.executeJavaScript(`(${exerciseGitChanges.toString()})("restore")`)
