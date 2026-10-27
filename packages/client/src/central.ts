@@ -2,10 +2,11 @@ import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, IceCandidate } from "./desktop-media.ts"
-import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage } from "../../../crates/protocol/control.ts"
+import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings } from "../../../crates/protocol/control.ts"
 
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
-export interface AccountState { serverUrl: string; user?: AccountUser }
+export interface AccountState { serverUrl: string; user?: AccountUser; siteAdmin: boolean }
+export type { SiteSettings } from "../../../crates/protocol/control.ts"
 export type Team = Omit<WireTeam, "role"> & { role: "admin" | "member" }
 export interface TeamMember { userId: string; name: string; email?: string | null; role: "admin" | "member" }
 export interface TeamUsage { relayedBytes: string; activeSessionCount: number; memberCount: number }
@@ -21,12 +22,19 @@ export type CentralEvent =
   | { type: "connection"; connected: boolean }
   | { type: "accountChanged" }
 
+/** Site management is available to the Web host, separately from the desktop bridge. */
+export interface SiteAdministrationApi {
+  siteSettings(): Promise<SiteSettings>
+  updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>
+}
+
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
 export interface CentralApi {
   status(): Promise<AccountState>
   setServer(serverUrl: string): Promise<AccountState>
   login(): Promise<void>
   logout(): Promise<void>
+  site(): Promise<SiteSettings>
   teams(): Promise<Team[]>
   createTeam(name: string): Promise<Team>
   members(teamId: string): Promise<TeamMember[]>

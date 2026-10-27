@@ -13,8 +13,8 @@ vi.mock("electron", () => ({
 }))
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
-import { app, safeStorage } from "electron"
-import { installCentralAccount } from "./central-account.ts"
+import { app, ipcMain, safeStorage } from "electron"
+import { CENTRAL_CHANNEL, installCentralAccount } from "./central-account.ts"
 
 const user = { id: "user-1", name: "Ada" }
 const serverUrl = "https://fleet.example"
@@ -50,9 +50,26 @@ test("restores an encrypted account using the async decryption result", async ()
   const encrypted = Buffer.from("saved-encrypted-token")
   const f = await setup({ encryptedToken: encrypted.toString("base64"), user })
   const client = await f.install()
-  expect(await client.status()).toEqual({ serverUrl, user })
+  expect(await client.status()).toEqual({ serverUrl, user, siteAdmin: false })
   expect(safeStorage.decryptStringAsync).toHaveBeenCalledExactlyOnceWith(encrypted)
   expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/me`, expect.objectContaining({ headers: { Authorization: "Bearer restored-token" } }))
+})
+
+test("desktop IPC reads public site settings but rejects administration even for a site administrator", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
+  const client = await f.install()
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ user, siteAdmin: true })))
+  expect((await client.status()).siteAdmin).toBe(true)
+  f.fetch.mockClear()
+
+  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false }
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify(settings)))
+  const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
+  const event = {} as Electron.IpcMainInvokeEvent
+  await expect(invoke(event, "site", [])).resolves.toEqual(settings)
+  await expect(invoke(event, "siteSettings", [])).rejects.toThrow("Invalid account operation")
+  await expect(invoke(event, "updateSiteSettings", [settings])).rejects.toThrow("Invalid account operation")
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ method: "GET" }))
 })
 
 test("login waits for async encryption before saving the token and publishing the account", async () => {
@@ -77,7 +94,7 @@ test("unavailable encryption neither restores nor persists credentials", async (
   const f = await setup({ encryptedToken: Buffer.from("saved-encrypted-token").toString("base64"), user })
   vi.mocked(safeStorage.isAsyncEncryptionAvailable).mockResolvedValue(false)
   const client = await f.install()
-  expect(await client.status()).toEqual({ serverUrl, user: undefined })
+  expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
   expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled()
   await client.exchange("callback-code", "verifier")
   expect(safeStorage.encryptStringAsync).not.toHaveBeenCalled()
