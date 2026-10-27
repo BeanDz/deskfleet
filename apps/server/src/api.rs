@@ -195,6 +195,7 @@ pub async fn rename_machine(
         &m.team_id,
         ControlMessage::CatalogChanged {
             machine_id: m.id.clone(),
+            session_id: None,
         },
     )
     .await;
@@ -438,6 +439,7 @@ pub async fn sync_catalog(
         &m.machine.team_id,
         ControlMessage::CatalogChanged {
             machine_id: m.machine.id,
+            session_id: None,
         },
     )
     .await;
@@ -473,6 +475,7 @@ pub async fn sync_history(
         &m.machine.team_id,
         ControlMessage::CatalogChanged {
             machine_id: m.machine.id,
+            session_id: Some(b.session_id),
         },
     )
     .await;
