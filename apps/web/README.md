@@ -24,6 +24,9 @@ separately hosted API; production otherwise uses the page's origin. Deploy
 `DESKFLEET_AUTH_WEB_URL` and explicit CORS origins for this application. Web and API
 must share a site for SameSite cookies; unrelated cross-site hosting is unsupported.
 
+The welcome page signs in to this compiled backend and has no address setting.
+Changing the backend requires rebuilding the Web client.
+
 Register and verify your email, or sign in using your password or Passkey.
 Select a team and a machine, and
 use its synchronized resource catalog. An administrator can create a team,
@@ -33,7 +36,8 @@ and displays a credential for import through the daemon's enrollment command.
 That credential is displayed only in the dialog and is not saved by the client.
 
 The browser uses HttpOnly login cookies, CSRF headers on mutations, and Origin
-validation for WebSockets. Session storage keeps only the selected server address.
+validation for WebSockets. The backend address comes only from build configuration;
+it is not retained as a browser preference.
 Email links open verification/recovery pages; `/auth/account` manages credentials
 and login sessions. Electron keeps an encrypted application token in its main
 process and uses the system browser with a one-use code/verifier exchange.

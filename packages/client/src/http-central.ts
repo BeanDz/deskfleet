@@ -35,7 +35,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #retry: ReturnType<typeof setTimeout> | undefined
   #disposed = false
   #csrf: string | undefined
-  constructor(options: HttpCentralOptions) { this.#options = options; this.#account = options.account }
+  constructor(options: HttpCentralOptions) { this.#options = options; this.#account = { ...options.account, serverUrl: serverAddress(options.account.serverUrl) } }
   async status(): Promise<AccountState> {
     let siteAdmin = false
     if (this.#account.token || this.#options.cookieAuth) {
@@ -53,16 +53,6 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       }
     }
     return { serverUrl: this.#account.serverUrl, user: this.#account.user, siteAdmin }
-  }
-  async setServer(address: string): Promise<AccountState> {
-    const serverUrl = serverAddress(address)
-    if (serverUrl !== this.#account.serverUrl) {
-      this.#disconnect()
-      this.#csrf = undefined
-      await this.#save({ serverUrl })
-      this.#emit({ type: "accountChanged" })
-    }
-    return this.status()
   }
   async login(): Promise<void> { await this.#options.authorize(this) }
   async authorizationUrl(returnTo: string): Promise<{ authorizationUrl: string; loginVerifier: string }> {

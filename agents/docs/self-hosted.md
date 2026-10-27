@@ -138,7 +138,7 @@ From a checkout, with the locked toolchain:
 ```sh
 mise install --locked
 # Bake a split API origin into the Web client when it differs from the page.
-# VITE_DESKFLEET_SERVER_URL=https://api.example.com
+# export VITE_DESKFLEET_SERVER_URL=https://api.example.com
 mise run build
 ```
 
@@ -148,11 +148,15 @@ mise run build
 - `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows)
 - `apps/web/dist/` for the static Web client
 
-`VITE_DESKFLEET_SERVER_URL` is read when the Web client is compiled. Changing
-the API origin later means building `apps/web/dist` again. The welcome screen
-can still point a single browser or Electron install at another origin; the Web
-client keeps that choice in `sessionStorage` for the tab, and Electron stores
-it with the account.
+`VITE_DESKFLEET_SERVER_URL` is read when the Web or Electron client is compiled.
+Changing the API origin requires rebuilding the affected client. The UI has no
+backend-address setting, and saved account data cannot override that choice.
+Without the variable, production Web builds use the page's origin and Electron
+uses `http://localhost:8080`. Build Electron for this deployment with:
+
+```sh
+VITE_DESKFLEET_SERVER_URL=https://api.example.com mise run desktop:build
+```
 
 A debug build (`mise run backend:dev` or `cargo build -p deskfleet-server`) is for
 development. Production runs the release binary.
@@ -222,7 +226,8 @@ Matching trims whitespace and lowercases ASCII email, preserving plus tags.
 Browsers send HttpOnly session cookies. Mutations require the exact allowed
 Origin and the CSRF token from `/api/auth/config` in `X-CSRF-Token`. WebSocket
 upgrades using cookies also validate Origin. Use same-site HTTPS origins for
-Web and API. Web stores only its API origin preference in sessionStorage.
+Web and API. The Web client's API origin comes from its build configuration;
+browser storage cannot change it.
 
 Electron opens the trusted Web authentication page in the system browser. An
 explicit approval returns a 60-second code to a temporary
@@ -456,9 +461,8 @@ agents. Supported targets are Linux x64, Linux arm64, macOS arm64, and Windows
 x64. The daemon's SQLite catalog, provider configuration, and terminal history
 stay in its data directory (`~/.deskfleet`, or `DESKFLEET_DAEMON_DIRECTORY`).
 
-On the welcome screen, set the server field to the API origin
-(`https://api.example.com` or the shared hostname). Electron's first launch
-defaults that field to `http://127.0.0.1:8080`. Sign in through the identity
+Build the clients for the API origin (`https://api.example.com` or the shared
+hostname) as described above. On the welcome screen, sign in through the identity
 provider, create a team, and enroll the local daemon from the desktop app when
 the app and the daemon are on the same computer.
 

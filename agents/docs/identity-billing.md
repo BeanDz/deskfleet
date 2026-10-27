@@ -112,7 +112,8 @@ open decisions, not an implicit cascading deletion.
 - Web uses Secure, HttpOnly, SameSite=Lax cookies (Secure is disabled for local
   HTTP development), CSRF tokens, and WebSocket Origin validation. Serve Web/API
   on the same site with explicit allowed origins; unrelated cross-site origins
-  are unsupported. Browser storage retains only the selected server address.
+  are unsupported. The server address is configured at build time and is not
+  retained as a browser preference.
 - Site administration remains separate from Team data access. Ordinary logout
   does not automatically cancel scheduled work; account disablement must be
   checked when authorizing its next execution.
