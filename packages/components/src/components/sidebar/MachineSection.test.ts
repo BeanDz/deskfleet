@@ -22,7 +22,7 @@ async function setup(machine: Partial<MachineSummary> = {}) {
   const wrapper = mount(MachineSection, {
     props: { machine: {
       id: "local-daemon", name: "host", local: true, online: true, desktop: false,
-      terminals: [{ id: "shell", title: "Machine shell", cwd: "/home/user" }], workspaces: [], ...machine,
+      terminals: [{ id: "shell", title: "Machine shell", cwd: "/home/user" }], sessions: [], workspaces: [], ...machine,
     } },
     global: { plugins: [pinia, router, i18n] },
   })

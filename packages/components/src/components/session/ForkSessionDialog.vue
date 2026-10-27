@@ -1,25 +1,30 @@
 <script setup lang="ts">
 import { FolderOpen, GitBranch, LoaderCircle } from "@lucide/vue"
 import { DialogDescription, DialogTitle, RadioGroupIndicator, RadioGroupItem, RadioGroupRoot } from "reka-ui"
-import { ref, useId } from "vue"
+import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   context: AgentSessionContext
   disabled: boolean
   retrying: boolean
+  /** Machine-scoped Sessions can only fork into directory context. */
+  allowWorktree?: boolean
   confirm(context: AgentSessionContext): Promise<void>
-}>()
+}>(), { allowWorktree: true })
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const id = useId()
-const context = ref(props.context)
+const context = ref(props.allowWorktree ? props.context : "directory" as const)
 const pending = ref(false)
 const error = ref<string>()
-const contexts = [{ id: "worktree", icon: GitBranch }, { id: "directory", icon: FolderOpen }] as const
+const contexts = computed(() => {
+  const options = [{ id: "worktree" as const, icon: GitBranch }, { id: "directory" as const, icon: FolderOpen }]
+  return props.allowWorktree ? options : options.filter(option => option.id === "directory")
+})
 
 function cancel(): void { if (!pending.value) emit("close") }
 async function submit(): Promise<void> {

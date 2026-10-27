@@ -25,7 +25,7 @@ function setup() { const store = useFleetStore(); stores.push(store); return sto
 test("maps configured directories onto the workspace and exposes only Session-owned worktrees", async () => {
   const store = setup()
   expect(store.machines).toHaveLength(1)
-  expect(store.newSessionTarget).toBeNull()
+  expect(store.newSessionTarget?.workspace).toBeUndefined()
   await store.refreshLocalCatalog()
   expect(store.catalogIdentity).toEqual({ teamId: "1", machineId: "9007199254740999" })
   expect(store.machines[0]!.id).toBe("local-daemon")
@@ -34,7 +34,7 @@ test("maps configured directories onto the workspace and exposes only Session-ow
   expect(workspace.directories.map(({ path }) => path)).toEqual(["/code/web", "/code/api"])
   expect(workspace.directories[0]!.git).toBeUndefined()
   expect(workspace).not.toHaveProperty("worktrees")
-  expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
+  expect(store.newSessionTarget!.workspace!.id).toBe(workspaceId)
   expect(store.findWorktree(mainWorktreeId)).toBeNull()
   expect(workspace.sessions).toHaveLength(1)
   const session = workspace.sessions[0]!
@@ -45,6 +45,22 @@ test("maps configured directories onto the workspace and exposes only Session-ow
   expect(session.worktree).not.toHaveProperty("sessions")
   expect(store.findSession(sessionId)?.session).toBe(session)
   expect(store.findWorktree(sessionWorktreeId)?.session).toBe(session)
+})
+
+test("findWorktree resolves machine-scoped Session worktrees", async () => {
+  const store = setup()
+  const snapshot = catalogFixture()
+  snapshot.workspaces = []
+  snapshot.sessions = [{ id: "41", sessionId: "40", directories: [{ path: "/home/demo" }] }]
+  vi.mocked(platformClient.catalog.list).mockResolvedValue(snapshot)
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions["40"] = { ...agentSnapshot().session, id: "40", workspaceId: undefined, title: "Home chat", context: "directory", archiveState: "active" }
+  const location = store.findWorktree("41")
+  expect(location?.workspace).toBeUndefined()
+  expect(location?.session.id).toBe("40")
+  expect(location?.worktree.directories.map(({ path }) => path)).toEqual(["/home/demo"])
+  expect(store.findSession("40")?.worktree?.id).toBe("41")
 })
 
 test("terminal ownership follows live changes and survives catalog refreshes", async () => {
@@ -88,9 +104,9 @@ test("workspace creation selects its configured directories without exposing an 
   const create = vi.spyOn(platformClient.catalog, "createWorkspace").mockResolvedValue(created)
   await store.createWorkspace("new workspace", paths)
   expect(create).toHaveBeenCalledWith("new workspace", paths)
-  expect(store.newSessionTarget?.workspace.id).toBe("20")
-  expect(store.newSessionTarget?.workspace.directories.map(({ path }) => ({ path }))).toEqual(paths)
-  expect(store.newSessionTarget?.workspace.sessions).toEqual([])
+  expect(store.newSessionTarget!.workspace!.id).toBe("20")
+  expect(store.newSessionTarget!.workspace!.directories.map(({ path }) => ({ path }))).toEqual(paths)
+  expect(store.newSessionTarget!.workspace!.sessions).toEqual([])
   expect(store.findWorktree("21")).toBeNull()
 })
 
@@ -108,7 +124,7 @@ test("workspace updates replace configured directories and retain Session paths;
   expect(store.findWorkspace(workspaceId)?.workspace.directories.map(({ path }) => path)).toEqual(paths.map(({ path }) => path))
   expect(store.findWorktree(mainWorktreeId)).toBeNull()
   expect(store.findSession(sessionId)?.worktree?.directories.map(({ path }) => path)).toEqual(["/worktrees/api/session"])
-  expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
+  expect(store.newSessionTarget!.workspace!.id).toBe(workspaceId)
   vi.mocked(platformClient.catalog.list).mockRejectedValueOnce(new Error("Daemon disconnected"))
   await store.refreshLocalCatalog()
   expect(store.catalogError).toBe("Daemon disconnected")
@@ -127,17 +143,18 @@ test("Session removal keeps the workspace selected and workspace deletion reconc
   changed()
   await vi.waitFor(() => expect(store.findWorktree(sessionWorktreeId)).toBeNull())
   expect(store.findSession(sessionId)).toBeNull()
-  expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
+  expect(store.newSessionTarget!.workspace!.id).toBe(workspaceId)
   updated.workspaces.push({ id: "20", name: "second", worktrees: [{ id: "21", workspaceId: "20", directories: [{ path: "/code/second" }] }] })
   await store.refreshLocalCatalog()
   store.targetWorkspace("20")
-  expect(store.newSessionTarget?.workspace.id).toBe("20")
+  expect(store.newSessionTarget!.workspace!.id).toBe("20")
   const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace").mockResolvedValue()
   await store.deleteWorkspace("20")
-  expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
+  expect(store.newSessionTarget!.workspace!.id).toBe(workspaceId)
   await store.deleteWorkspace(workspaceId)
   expect(remove).toHaveBeenCalledWith(workspaceId)
-  expect(store.newSessionTarget).toBeNull()
+  expect(store.newSessionTarget?.workspace).toBeUndefined()
+  expect(store.newSessionTarget?.machine.id).toBe("local-daemon")
 })
 
 test("catalog notifications reconcile a selected workspace removed by another client", async () => {
@@ -149,7 +166,7 @@ test("catalog notifications reconcile a selected workspace removed by another cl
   store.targetWorkspace("20")
   vi.mocked(platformClient.catalog.list).mockResolvedValue(catalogFixture())
   changed()
-  await vi.waitFor(() => expect(store.newSessionTarget?.workspace.id).toBe(workspaceId))
+  await vi.waitFor(() => expect(store.newSessionTarget!.workspace!.id).toBe(workspaceId))
   expect(store.findWorkspace("20")).toBeNull()
 })
 
@@ -238,7 +255,7 @@ test("catalog notifications keep the loaded workspace and title stable while a b
   changed()
   expect(store.catalogLoading).toBe(false)
   expect(store.findWorkspace(workspaceId)!.workspace).toBe(workspace)
-  expect(store.newSessionTarget?.workspace.id).toBe(workspaceId)
+  expect(store.newSessionTarget!.workspace!.id).toBe(workspaceId)
   const updated = catalogFixture()
   updated.workspaces[0]!.name = "Updated by another client"
   background.resolve(updated)
@@ -282,7 +299,7 @@ test("selecting a different machine starts with its own initial loading state an
     expect(next.catalogIdentity).toBeNull()
     expect(next.findWorkspace(workspaceId)).toBeNull()
     expect(first.findWorkspace(workspaceId)?.workspace.name).toBe("storefront")
-    initial.resolve({ teamId: "2", machineId: "3", machineName: "another", workspaces: [] })
+    initial.resolve({ teamId: "2", machineId: "3", machineName: "another", workspaces: [], sessions: [] })
     await loading
     expect(next.catalogLoading).toBe(false)
     expect(next.catalogIdentity).toEqual({ teamId: "2", machineId: "3" })
