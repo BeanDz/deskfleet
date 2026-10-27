@@ -274,17 +274,126 @@ test("replacing a watched directory rebinds its watch and refreshes cached edits
   assert.deepEqual(f.errors, [])
 })
 
+test("transient .git/config permission errors are retried without a sticky failure", async context => {
+  let revParse = 0
+  const original = childProcess.execFile
+  const lock = "warning: unable to access '.git/config': Permission denied\nfatal: unknown error occurred while reading the configuration files"
+  const mock = context.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
+    const argv = args[1]
+    const callback = args.find(argument => typeof argument === "function") as ((error: Error | null, stdout: string, stderr: string) => void) | undefined
+    if (Array.isArray(argv) && argv.includes("rev-parse") && revParse++ === 0 && callback) {
+      const error = Object.assign(new Error("Command failed: git"), { code: 128 })
+      queueMicrotask(() => callback(error, "", `${lock}\n`))
+      return { stdin: { on() { return this }, end() { return this } }, stdout: { on() { return this } }, stderr: { on() { return this } }, on() { return this }, once() { return this } } as unknown as ReturnType<typeof childProcess.execFile>
+    }
+    return original(...args)
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
+  const f = await fixture(context)
+  assert.ok(revParse > 1, "rev-parse should retry after the injected lock")
+  assert.deepEqual(f.errors, [])
+  assert.equal((await f.inspection.status("1", [f.root])).repositories.length, 1)
+  await f.changed(() => writeFile(join(f.root, "source.txt"), "after transient lock\n"))
+})
+
+test("a classify config-lock retry still rebinds a replaced directory watch", async context => {
+  const callbacks = controlledWatches(context)
+  const f = await fixture(context)
+  const nested = join(f.root, "nested")
+  await mkdir(nested)
+  callbacks.get(f.root)!("rename", "nested")
+  await eventually(() => callbacks.has(nested), "new directory was not watched")
+  const originalWatch = callbacks.get(nested)!
+  // Fail the first check-ignore that classifies the replacement rename so the
+  // retry path must call topology itself instead of relying on a later scan.
+  let checkIgnoreLocks = 0
+  const original = childProcess.execFile
+  const lock = "warning: unable to access '.git/config': Permission denied\nfatal: unknown error occurred while reading the configuration files"
+  const mock = context.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
+    const argv = args[1]
+    const callback = args.find(argument => typeof argument === "function") as ((error: Error | null, stdout: string, stderr: string) => void) | undefined
+    if (Array.isArray(argv) && argv.includes("check-ignore") && checkIgnoreLocks++ === 0 && callback) {
+      const error = Object.assign(new Error("Command failed: git"), { code: 128 })
+      queueMicrotask(() => callback(error, "", `${lock}\n`))
+      return { stdin: { on() { return this }, end() { return this } }, stdout: { on() { return this } }, stderr: { on() { return this } }, on() { return this }, once() { return this } } as unknown as ReturnType<typeof childProcess.execFile>
+    }
+    return original(...args)
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
+  await rename(nested, join(f.root, "old"))
+  await mkdir(nested)
+  await writeFile(join(nested, "new.txt"), "replacement\n")
+  callbacks.get(f.root)!("rename", "nested")
+  await eventually(() => callbacks.get(nested) !== originalWatch, "config-lock retry did not rebind the replaced directory watch")
+  assert.ok(checkIgnoreLocks > 1, "check-ignore should retry after the injected lock")
+  assert.deepEqual(f.errors, [])
+})
+
+test("a successful classify config-lock retry restores the full rebuild retry budget", async context => {
+  // Untracked file renames set the topology flag, but `#topology` returns for
+  // files without scheduling a `#scan`. The classify success path must clear
+  // `#configLockStreak` itself; otherwise a leftover streak of 1 makes the
+  // CONFIG_LOCK_RETRIES-th rebuild lock raise `#failure`.
+  const callbacks = controlledWatches(context)
+  const f = await fixture(context)
+  const lock = "warning: unable to access '.git/config': Permission denied\nfatal: unknown error occurred while reading the configuration files"
+  const rebuildLocks = 40
+  let checkIgnoreLocks = 0
+  let revParseLocks = 0
+  const original = childProcess.execFile
+  const mock = context.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
+    const argv = args[1]
+    const callback = args.find(argument => typeof argument === "function") as ((error: Error | null, stdout: string, stderr: string) => void) | undefined
+    const fail = () => {
+      const error = Object.assign(new Error("Command failed: git"), { code: 128 })
+      queueMicrotask(() => callback!(error, "", `${lock}\n`))
+      return { stdin: { on() { return this }, end() { return this } }, stdout: { on() { return this } }, stderr: { on() { return this } }, on() { return this }, once() { return this } } as unknown as ReturnType<typeof childProcess.execFile>
+    }
+    if (Array.isArray(argv) && argv.includes("check-ignore") && checkIgnoreLocks++ === 0 && callback) return fail()
+    if (Array.isArray(argv) && argv.includes("rev-parse") && revParseLocks++ < rebuildLocks && callback) return fail()
+    return original(...args)
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
+  await writeFile(join(f.root, "scratch.txt"), "untracked\n")
+  callbacks.get(f.root)!("rename", "scratch.txt")
+  await eventually(() => checkIgnoreLocks > 1, "classify did not retry after the injected lock")
+  await writeFile(join(f.root, ".gitignore"), "scratch.txt\n")
+  callbacks.get(f.root)!("change", ".gitignore")
+  // Backoff for 40 rebuild locks is capped at 500ms each (~20s); allow headroom.
+  const deadline = Date.now() + 30_000
+  while (revParseLocks <= rebuildLocks && Date.now() < deadline) await delay(50)
+  assert.ok(revParseLocks > rebuildLocks, "rebuild did not consume the full config-lock retry budget")
+  assert.deepEqual(f.errors, [])
+})
+
 test("submodules use their own ignore rules and watch metadata outside the working tree", async context => {
   const f = await fixture(context)
+  // Finish submodule topology before watching. On Windows, `git submodule add`
+  // briefly locks `.git/config`; racing an open watcher yields Permission denied
+  // that is not a product failure once the lock is released.
+  f.stop()
   const source = join(f.root, "source-repository")
   await repository(source)
   await git(f.root, "-c", "protocol.file.allow=always", "submodule", "add", source, "module")
   await git(f.root, "commit", "--no-gpg-sign", "-am", "submodule")
-  await delay(400)
+  let events = 0
+  const errors: string[] = []
+  await f.watch([f.root], error => { events++; if (error) errors.push(error) })
   const module = join(f.root, "module")
-  await f.changed(() => writeFile(join(module, "source.txt"), "module change\n"))
-  await f.changed(() => git(module, "add", "source.txt"))
-  assert.deepEqual(f.errors, [])
+  async function changed(action: () => Promise<unknown>) {
+    const before = events
+    await action()
+    const until = Date.now() + 5_000
+    while (events === before && Date.now() < until) await delay(20)
+    assert.ok(events > before, "OS notification did not arrive")
+    assert.deepEqual(errors, [])
+  }
+  await changed(() => writeFile(join(module, "source.txt"), "module change\n"))
+  await changed(() => git(module, "add", "source.txt"))
+  assert.deepEqual(errors, [])
   assert.ok((await f.inspection.status("1", [f.root])).repositories[0]!.changes.some(change => change.path === "module"))
 })
 
