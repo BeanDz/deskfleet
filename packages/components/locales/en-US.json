@@ -171,8 +171,26 @@
     "openLabel": "Open {title}",
     "restoreLabel": "Restore {title}"
   },
+  "appearance": {
+    "language": "Language",
+    "theme": "Theme",
+    "followSystem": "Follow system",
+    "light": "Light",
+    "dark": "Dark",
+    "preview": "Live preview",
+    "defaultFont": "System default",
+    "interfaceFont": "Interface font",
+    "terminalFont": "Terminal font",
+    "fontHint": "Use an installed font. Leave blank for the default.",
+    "terminalFontHint": "CSS fallbacks supported, e.g. \"Cascadia Code\", monospace. Leave blank for the default.",
+    "interfacePreview": "The quick brown fox. 你好，世界。",
+    "terminalPreview": "Terminal font preview",
+    "ligatures": "Font ligatures",
+    "ligaturesHint": "Combine characters like => and != when the terminal font supports it."
+  },
   "settings": {
     "preferences": "Preferences",
+    "appearance": "Appearance",
     "notifications": "Notifications",
     "notificationsEnabled": "Desktop notifications",
     "notificationsDescription": "Allow deskfleet to send notifications on this computer.",
