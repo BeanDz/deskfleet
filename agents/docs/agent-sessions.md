@@ -56,6 +56,22 @@ normal journal synchronization updates other clients and retained central histor
 The persisted `titleCustomized` flag makes a user rename take precedence over later
 ACP `session_info_update` titles, including after daemon restart or restore.
 
+### Pinned Sessions
+
+The Session context menu offers Pin and Unpin, including for archived Sessions and
+offline machines. Pinned Sessions appear together above Workspaces in the sidebar;
+their original Workspace or machine association is unchanged. The section is hidden
+when there are no visible pins. Opening a pin switches to its owning machine when
+needed, then opens that Session in the machine's isolated application scope.
+
+Pins are personal preferences stored on the current device, scoped by server,
+account, and Team. Each entry uses the central machine ID together with the local
+Session ID, so equal Session IDs on different machines remain distinct. Pinning
+does not mutate the daemon or synchronize preferences between devices. The active
+machine supplies live titles; other machines use retained central Session metadata
+with a cached title while history is unavailable. Removed machines are not shown.
+Embedded demos keep their pins in memory so separate demonstrations stay independent.
+
 ### Forking a conversation
 
 The Session menu offers Fork when the provider advertises `session/fork`. Forking
@@ -92,6 +108,17 @@ fall back to a blank conversation. A rejection before allocation remains an
 error on retry. The UI refreshes the catalog and opens the resulting Session.
 
 ## Archive and restore in the backend release
+
+The sidebar footer links to `/sessions/archived`, a dedicated page for the selected
+machine's archived Sessions. The page supports direct navigation and browser history;
+changing machines keeps the archive route and loads the new machine's list. It hides
+the resource details panel and retains the last Conversations destination within the
+mounted machine scope. A fresh machine scope resets that destination to New session.
+Reading a Session opens its history without restoring it. The restore action confirms
+before restoring and opening the Session; failures retain the confirmation for retry.
+Rows keep the Session context menu, including Pin/Unpin and Rename. Offline history
+remains readable, while restoration and other daemon mutations require the machine
+online. The page shows loading, empty, and retry states for list reads.
 
 Archive is the normal user action for ending active use of a Session. It is
 reversible and preserves the Session identity, execution context, Worktree files
