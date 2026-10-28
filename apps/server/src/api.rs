@@ -267,6 +267,7 @@ const MANAGEMENT: &[&str] = &[
     "_deskfleet/session/configure",
     "_deskfleet/agent/configuration",
     "_deskfleet/command/get",
+    "_deskfleet/git/branches",
     "scheduleList",
     "scheduleCreate",
     "scheduleUpdate",
