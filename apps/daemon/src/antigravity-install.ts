@@ -54,8 +54,14 @@ try {
     if (!(Test-Path -LiteralPath (Join-Path $extracted $file) -PathType Leaf)) { throw ('Antigravity archive is missing ' + $file) }
   }
   New-Item -ItemType Directory -Path $destination -Force | Out-Null
-  Get-Process -Name 'agy_acp_server', 'localharness_external' -ErrorAction SilentlyContinue | Stop-Process -Force -PassThru -ErrorAction SilentlyContinue | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+  foreach ($file in @('agy_acp_server.exe', 'localharness_external.exe')) {
+    $existing = Join-Path $destination $file
+    if (Test-Path -LiteralPath $existing -PathType Leaf) {
+      Move-Item -LiteralPath $existing -Destination (Join-Path $destination ('.' + $file + '.' + [Guid]::NewGuid().ToString() + '.old')) -Force
+    }
+  }
   Get-ChildItem -LiteralPath $extracted -Force | Copy-Item -Destination $destination -Recurse -Force
+  Remove-Item -Path (Join-Path $destination '.*.old') -Force -ErrorAction SilentlyContinue
   Write-Output ('Antigravity installed at ' + $destination)
 } finally {
   Remove-Item -LiteralPath $work -Recurse -Force
